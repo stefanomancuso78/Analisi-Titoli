@@ -1,0 +1,302 @@
+{
+  "id": "prediction-temporal-lab-v1",
+  "created_at": "2026-11-12T07:17:13.380469+00:00",
+  "source_protocol": "retrospective-pilot-v1",
+  "features": [
+    "return_1",
+    "return_5",
+    "return_20",
+    "volatility_20"
+  ],
+  "train_count": 1560,
+  "test_count": 840,
+  "holdout_start": "2026-09-10",
+  "train_last_outcome": "2026-09-09",
+  "test_first_decision": "2026-09-10",
+  "results": [
+    {
+      "model": "training_prior",
+      "brier": 0.25113206771860624,
+      "log_loss": 0.6954113471507908,
+      "accuracy_pct": 32.5,
+      "selected_cases": 0,
+      "selected_mean_net_return_pct": null
+    },
+    {
+      "model": "logistic",
+      "brier": 0.2493274664712548,
+      "log_loss": 0.6916541732556871,
+      "accuracy_pct": 52.976190476190474,
+      "selected_cases": 320,
+      "selected_mean_net_return_pct": -4.2424498785871805
+    },
+    {
+      "model": "hist_gradient_boosting",
+      "brier": 0.23840865636739716,
+      "log_loss": 0.6672278947986954,
+      "accuracy_pct": 58.333333333333336,
+      "selected_cases": 306,
+      "selected_mean_net_return_pct": -2.8143955675530146
+    }
+  ],
+  "excluded": [
+    {
+      "symbol": "FLNC",
+      "reason": "possible split or extreme move; unverified raw-price discontinuity"
+    }
+  ],
+  "sources": [
+    {
+      "symbol": "ALNY",
+      "sha256": "76973c32c40123b718c96709696ca511ad3afa0032eb42eca23c9cd71af984d8",
+      "acquired_at": "2026-11-11T03:38:35.896915Z",
+      "source": "https://api.nasdaq.com/api/quote/ALNY/historical"
+    },
+    {
+      "symbol": "AMD",
+      "sha256": "5a7387ccbba8948552024e9cd14d559bff22aaa4bb200d611479f8caefae78a1",
+      "acquired_at": "2026-11-11T03:38:36.014923Z",
+      "source": "https://api.nasdaq.com/api/quote/AMD/historical"
+    },
+    {
+      "symbol": "AMGN",
+      "sha256": "b928bf646237a1a5ad43e88ac866d741f68d42233954b8ac03519ec99dd824e6",
+      "acquired_at": "2026-11-11T03:38:36.240510Z",
+      "source": "https://api.nasdaq.com/api/quote/AMGN/historical"
+    },
+    {
+      "symbol": "ANET",
+      "sha256": "da18ada1e7368f7bc21995aee8c26037270ba1039ddb41907f7191439889cabe",
+      "acquired_at": "2026-11-11T03:38:36.566761Z",
+      "source": "https://api.nasdaq.com/api/quote/ANET/historical"
+    },
+    {
+      "symbol": "ARGX",
+      "sha256": "02971fc3301ce0373d46c877ce6d1ecb570c80e9b42eeab2fbb82269a10fec64",
+      "acquired_at": "2026-11-11T03:38:36.670767Z",
+      "source": "https://api.nasdaq.com/api/quote/ARGX/historical"
+    },
+    {
+      "symbol": "ASML",
+      "sha256": "01d53ddc6a8e834ec4f58ee5eedc5d5960d6e6c70ad834ee21f1cf39b2829be4",
+      "acquired_at": "2026-11-11T03:38:37.125519Z",
+      "source": "https://api.nasdaq.com/api/quote/ASML/historical"
+    },
+    {
+      "symbol": "AVGO",
+      "sha256": "961e043f3eccf30d3c4edf0cd13e2797cff93c30a0f08d115594885ce3783e1f",
+      "acquired_at": "2026-11-11T03:38:37.483922Z",
+      "source": "https://api.nasdaq.com/api/quote/AVGO/historical"
+    },
+    {
+      "symbol": "AZN",
+      "sha256": "1814a4606c87432d1deeb0f05df145a4b30e48d1f1588c9bc5af815061827e3d",
+      "acquired_at": "2026-11-11T03:38:37.644954Z",
+      "source": "https://api.nasdaq.com/api/quote/AZN/historical"
+    },
+    {
+      "symbol": "BNTX",
+      "sha256": "3b400d74d9dbae891f220f6bab677ab1ff34546f97e67acef4d8b9eea805cb1a",
+      "acquired_at": "2026-11-11T03:38:37.933643Z",
+      "source": "https://api.nasdaq.com/api/quote/BNTX/historical"
+    },
+    {
+      "symbol": "BWXT",
+      "sha256": "93bbec2dba7ca6bddf9ce9b6a16724f2e2987fb4db306c9913a41087af64a194",
+      "acquired_at": "2026-11-11T03:38:38.174822Z",
+      "source": "https://api.nasdaq.com/api/quote/BWXT/historical"
+    },
+    {
+      "symbol": "CCJ",
+      "sha256": "c9d0bc71fae81deed9b7a56eef2069935e4c87ed10740e1b4f420567b74208a0",
+      "acquired_at": "2026-11-11T03:38:38.714594Z",
+      "source": "https://api.nasdaq.com/api/quote/CCJ/historical"
+    },
+    {
+      "symbol": "CDNS",
+      "sha256": "1b716ac0c48e4c012f45e2e788d70ef137df0e2c4420b97c460eb2deaebbea2e",
+      "acquired_at": "2026-11-11T03:38:39.146472Z",
+      "source": "https://api.nasdaq.com/api/quote/CDNS/historical"
+    },
+    {
+      "symbol": "CEG",
+      "sha256": "90498ea4d96fa77c2aeea67fb9ca959dddd12ea94f7b4f3cdb7cb3cee92b0a2c",
+      "acquired_at": "2026-11-11T03:38:39.296464Z",
+      "source": "https://api.nasdaq.com/api/quote/CEG/historical"
+    },
+    {
+      "symbol": "CRSP",
+      "sha256": "ea3be9e5b9ae3597d7d90c85a5bda068b8d70aa257d8abeb5105a8992b276823",
+      "acquired_at": "2026-11-11T03:38:39.493039Z",
+      "source": "https://api.nasdaq.com/api/quote/CRSP/historical"
+    },
+    {
+      "symbol": "CSCO",
+      "sha256": "fac5e476fbcca9cfe70678f5ee2b167d8c286f6d7c434e6eba7711bdf2321ec6",
+      "acquired_at": "2026-11-11T03:38:39.747431Z",
+      "source": "https://api.nasdaq.com/api/quote/CSCO/historical"
+    },
+    {
+      "symbol": "DELL",
+      "sha256": "924d0d86cd367184980263aff3e3e76bdae95a19ed66ef4a1f1450b995d9fe1d",
+      "acquired_at": "2026-11-11T03:38:39.966183Z",
+      "source": "https://api.nasdaq.com/api/quote/DELL/historical"
+    },
+    {
+      "symbol": "DLR",
+      "sha256": "7a293db1c75a78023b3558622814964d3929d3e12105e5a3493d4786eb079c5c",
+      "acquired_at": "2026-11-11T03:38:40.487862Z",
+      "source": "https://api.nasdaq.com/api/quote/DLR/historical"
+    },
+    {
+      "symbol": "EQIX",
+      "sha256": "2425871d9b8a1c964caba2b17264dacc4c1e2b0b6041cba2cbb15c2d1fc90d38",
+      "acquired_at": "2026-11-11T03:38:40.727120Z",
+      "source": "https://api.nasdaq.com/api/quote/EQIX/historical"
+    },
+    {
+      "symbol": "ETN",
+      "sha256": "5c109ac34a494a3e36781cd934cf465d2f3f91865b85a8e116b05f3bb553ff34",
+      "acquired_at": "2026-11-11T03:38:40.889836Z",
+      "source": "https://api.nasdaq.com/api/quote/ETN/historical"
+    },
+    {
+      "symbol": "FSLR",
+      "sha256": "61b4be4aaf772105b90bf9c384470423b9f5ca6b0a5ebc9112a8950a7fea3e67",
+      "acquired_at": "2026-11-11T03:38:41.607908Z",
+      "source": "https://api.nasdaq.com/api/quote/FSLR/historical"
+    },
+    {
+      "symbol": "GEV",
+      "sha256": "b5091a16719ed48e39fd704bbff84f0f96ec1c9287502907fdfd3f9d05275150",
+      "acquired_at": "2026-11-11T03:38:42.006714Z",
+      "source": "https://api.nasdaq.com/api/quote/GEV/historical"
+    },
+    {
+      "symbol": "GILD",
+      "sha256": "4b60f9618d0fa1c585ce1f75a4a391c276c509e996a29d49582235ffdc61a1e7",
+      "acquired_at": "2026-11-11T03:38:42.059178Z",
+      "source": "https://api.nasdaq.com/api/quote/GILD/historical"
+    },
+    {
+      "symbol": "HPE",
+      "sha256": "eeefdda991f3cf284ec17ce81830a5f633687c71c3e10de57e54652f6a45afea",
+      "acquired_at": "2026-11-11T03:38:42.365913Z",
+      "source": "https://api.nasdaq.com/api/quote/HPE/historical"
+    },
+    {
+      "symbol": "IBM",
+      "sha256": "b55389ea81a031121b03c40ba323ced1cd557c1297c4d3b13d3c079eede202ac",
+      "acquired_at": "2026-11-11T03:38:42.854329Z",
+      "source": "https://api.nasdaq.com/api/quote/IBM/historical"
+    },
+    {
+      "symbol": "ISRG",
+      "sha256": "fecf79b8ae9dcdda13cc08a2907c703a18c49e0a09c424b091c9e59e0e9c6ec3",
+      "acquired_at": "2026-11-11T03:38:43.115931Z",
+      "source": "https://api.nasdaq.com/api/quote/ISRG/historical"
+    },
+    {
+      "symbol": "LEU",
+      "sha256": "4dc6d223859fb333c1edf7eb11d601e2792d3c6c0d80207b53d6c9cc25bedeca",
+      "acquired_at": "2026-11-11T03:38:43.256735Z",
+      "source": "https://api.nasdaq.com/api/quote/LEU/historical"
+    },
+    {
+      "symbol": "MRVL",
+      "sha256": "b47119f2b90663e9a4794d9a51824f383d2450730f858b4d14fd419761ac4482",
+      "acquired_at": "2026-11-11T03:38:43.405890Z",
+      "source": "https://api.nasdaq.com/api/quote/MRVL/historical"
+    },
+    {
+      "symbol": "MU",
+      "sha256": "48a0b1e27d0a307fb932f15dbf5469a0f2d6b498d6046e0eb9c6441ed2128d79",
+      "acquired_at": "2026-11-11T03:38:44.195579Z",
+      "source": "https://api.nasdaq.com/api/quote/MU/historical"
+    },
+    {
+      "symbol": "NOW",
+      "sha256": "9ab4e98e568009b9996b211c910e9620756bb25863cce4664b56aeebaa57be51",
+      "acquired_at": "2026-11-11T03:38:44.331097Z",
+      "source": "https://api.nasdaq.com/api/quote/NOW/historical"
+    },
+    {
+      "symbol": "NVO",
+      "sha256": "336894505759cec02ec43fbc3610024cd22790708675254f4735e52670e631bb",
+      "acquired_at": "2026-11-11T03:38:44.511397Z",
+      "source": "https://api.nasdaq.com/api/quote/NVO/historical"
+    },
+    {
+      "symbol": "NXT",
+      "sha256": "7d088b430af38096a9f2c4d3442921d6d2dccf75db695dc60beed17884e87ed8",
+      "acquired_at": "2026-11-11T03:38:44.675241Z",
+      "source": "https://api.nasdaq.com/api/quote/NXT/historical"
+    },
+    {
+      "symbol": "PLTR",
+      "sha256": "df032d1466a031bda3f2a4e0d1df8ffd18f9adbac9bec1d0597d64bdd73d984c",
+      "acquired_at": "2026-11-11T03:38:45.434944Z",
+      "source": "https://api.nasdaq.com/api/quote/PLTR/historical"
+    },
+    {
+      "symbol": "REGN",
+      "sha256": "19526a704a43f03464907187b7022090f7f5d0ded89a122678537a5d932606f9",
+      "acquired_at": "2026-11-11T03:38:45.503001Z",
+      "source": "https://api.nasdaq.com/api/quote/REGN/historical"
+    },
+    {
+      "symbol": "SLNG",
+      "sha256": "09456e0f56d1ddb6726e9c2dc0793eafd6d8225aa2a8879f3a912ed840d19c55",
+      "acquired_at": "2026-11-11T03:38:45.684180Z",
+      "source": "https://api.nasdaq.com/api/quote/SLNG/historical"
+    },
+    {
+      "symbol": "SNPS",
+      "sha256": "34d4edd6d22e7d3b8618fbf2b37e21355197c9856b14dffd6a93c0beeab978ad",
+      "acquired_at": "2026-11-11T03:38:45.820120Z",
+      "source": "https://api.nasdaq.com/api/quote/SNPS/historical"
+    },
+    {
+      "symbol": "STM",
+      "sha256": "5bc5ecc621beb61b61e1d4f623650009776419bc3e2205feeac262a89b4fa027",
+      "acquired_at": "2026-11-11T03:38:46.557064Z",
+      "source": "https://api.nasdaq.com/api/quote/STM/historical"
+    },
+    {
+      "symbol": "TSM",
+      "sha256": "dee6cd93efc3146a47a92855e560e2c0a745b37d22d44f221f80ccd88a8edd5e",
+      "acquired_at": "2026-11-11T03:38:46.758972Z",
+      "source": "https://api.nasdaq.com/api/quote/TSM/historical"
+    },
+    {
+      "symbol": "VRT",
+      "sha256": "7ff6483b42e8e2c19a73b02b2cb4df284f269340cf3c0996ea3344874ba6dd73",
+      "acquired_at": "2026-11-11T03:38:46.897324Z",
+      "source": "https://api.nasdaq.com/api/quote/VRT/historical"
+    },
+    {
+      "symbol": "VRTX",
+      "sha256": "0d7d22b105848f8849b2998dcac1b44dc9bf767b9dffa6f797cb9895e6e7aae3",
+      "acquired_at": "2026-11-11T03:38:47.035694Z",
+      "source": "https://api.nasdaq.com/api/quote/VRTX/historical"
+    },
+    {
+      "symbol": "ZNTL",
+      "sha256": "c8f445f05e2ac65a8b0c1ac537129202417e32c5bb9ece56f7df14ed4c4553bd",
+      "acquired_at": "2026-11-11T03:38:47.859636Z",
+      "source": "https://api.nasdaq.com/api/quote/ZNTL/historical"
+    }
+  ],
+  "engine": {
+    "scikit-learn": "1.8.0"
+  },
+  "automatic_application": false,
+  "limitations": [
+    "Current watchlist selected today: selection/survivor bias; not historical constituents.",
+    "Raw closes, incomplete corporate actions, no dividends, tax or FX.",
+    "Overlapping 30-day outcomes and correlated stocks; no independent-sample confidence claim.",
+    "Holdout used once for this registered comparison; later changes require a new unseen holdout.",
+    "Mean selected-case return is not a tradable portfolio return.",
+    "Models use price features only; not evidence about news interpretation or Claude/Codex quality."
+  ]
+}

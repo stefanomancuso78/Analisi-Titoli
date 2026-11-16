@@ -1,0 +1,68 @@
+{
+  "checked_at": "2026-11-12",
+  "kind": "local_component_checks_not_llm_comparison",
+  "checks": [
+    {
+      "name": "OpenAI validator valid",
+      "observed": true,
+      "expected": true,
+      "scope": "format_only",
+      "limitation": null
+    },
+    {
+      "name": "OpenAI validator bad_name",
+      "observed": false,
+      "expected": false,
+      "scope": "format_only",
+      "limitation": null
+    },
+    {
+      "name": "OpenAI validator unknown_key",
+      "observed": false,
+      "expected": false,
+      "scope": "format_only",
+      "limitation": null
+    },
+    {
+      "name": "OpenAI validator empty_metadata",
+      "observed": true,
+      "expected": true,
+      "scope": "format_only",
+      "limitation": "Empty metadata is accepted; structural validation does not prove usefulness."
+    },
+    {
+      "name": "Anthropic numeric aggregation",
+      "observed": 0.6667,
+      "expected": 0.6667,
+      "scope": "component_math",
+      "limitation": null
+    },
+    {
+      "name": "Anthropic delta depends on insertion order",
+      "observed": "-0.50",
+      "expected": "-0.50",
+      "scope": "report_semantics",
+      "limitation": "Delta uses first group minus second, not explicit with-minus-without; callers must label direction."
+    },
+    {
+      "name": "Anthropic character fallback",
+      "observed": 1234,
+      "expected": 1234,
+      "scope": "report_semantics",
+      "limitation": "Output characters can be reported in the tokens field; not a measured token count."
+    },
+    {
+      "name": "Anthropic fixed repetition metadata",
+      "observed": 3,
+      "expected": 3,
+      "scope": "report_semantics",
+      "limitation": "Fixture has one run, yet metadata reports three; derive repetitions from observed runs instead."
+    }
+  ],
+  "count": 8,
+  "scripts": {
+    "aggregate_benchmark.py": "086bebffc6b54af7b399e32d888f086f2e981a7da3a8c8e794fce1916bab6e0a",
+    "quick_validate.py": "9be8665b0c99aa5f4e773bd8013c081217dab901d0e24c2c44f9a91558fc1a2e"
+  },
+  "conclusion": "Scripts execute as observed. This is not evidence that a skill improves agent output or financial performance. Claude end-to-end tests were not run: no configured Claude CLI/API."
+}

@@ -1,0 +1,55 @@
+{
+  "reviewed_at": "2026-11-12",
+  "scope": "Public repositories and pinned source; no private algorithms accessed",
+  "repositories": [
+    {
+      "repo": "openai/skills",
+      "commit": "49f948faa9258a0c61caceaf225e179651397431",
+      "url": "https://github.com/openai/skills",
+      "license": "Apache-2.0 for inspected skill-creator files",
+      "evidence": "Local format-validator checks; no proof of agent improvement",
+      "adoption": "Use focused validators as an additional format gate"
+    },
+    {
+      "repo": "anthropics/skills",
+      "commit": "2c5958ecac7cee2b583967a2c4981d0f4a75c579",
+      "url": "https://github.com/anthropics/skills",
+      "license": "Apache-2.0 for inspected skill-creator files",
+      "evidence": "Local benchmark-component checks; aggregation caveats reproduced",
+      "adoption": "Use paired with/without evaluation design; replace ambiguous metrics and group ordering"
+    },
+    {
+      "repo": "obra/superpowers",
+      "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+      "url": "https://github.com/obra/superpowers",
+      "license": "MIT",
+      "evidence": "Public CLI/integration test definitions inspected; Claude end-to-end tests not executed",
+      "adoption": "Use explicit verification records; test marginal benefit rather than assume it"
+    },
+    {
+      "repo": "wshobson/agents \u00b7 risk-metrics-calculation",
+      "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+      "url": "https://github.com/wshobson/agents/tree/9c61ab243def98f72da12abd41cfcf5bcd91af9d/plugins/quantitative-trading/skills/risk-metrics-calculation",
+      "license": "MIT (repository metadata)",
+      "evidence": "SWE-Skills-Bench v1 reports a same-named risk skill improving 70% to 100% on 10 tasks with Claude Haiku 4.5. The tested commit has not been matched to this current source; no agent-level reproduction here.",
+      "adoption": "Candidate for controlled risk-metric evaluations; not proof of financial prediction quality."
+    }
+  ],
+  "papers": [
+    {
+      "url": "https://arxiv.org/abs/2602.12670",
+      "name": "SkillsBench",
+      "evidence": "Preprint; reported average +16.2 percentage points, with task-level regressions; not reproduced here"
+    },
+    {
+      "url": "https://arxiv.org/abs/2603.15401",
+      "name": "SWE-Skills-Bench",
+      "evidence": "Preprint; abstract reports average +1.2% and most tested skills without improvement; not reproduced here"
+    }
+  ],
+  "limits": [
+    "No superiority claim from stars, README assertions, script tests, or test-count totals",
+    "No Claude-versus-Codex paired model experiment has been executed in this workspace",
+    "Reported external benchmark results are version- and task-dependent, not proof of StokIQ performance"
+  ]
+}

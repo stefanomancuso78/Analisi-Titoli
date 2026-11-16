@@ -1,0 +1,26 @@
+{
+  "kind": "numerical_parity_not_financial_validation",
+  "library": "Riskfolio-Lib",
+  "version": "7.4.1",
+  "seed": 55,
+  "configuration": {
+    "model": "HRP",
+    "rm": "MV",
+    "linkage": "single",
+    "leaf_order": false
+  },
+  "assets": [
+    1,
+    2,
+    4,
+    7
+  ],
+  "maximum_absolute_errors": [
+    0.0,
+    1.1102230246251565e-16,
+    6.938893903907228e-17,
+    1.1102230246251565e-16
+  ],
+  "passed": true,
+  "limitation": "Controlled synthetic matrices verify this configured calculation; not all market inputs or investment efficacy."
+}

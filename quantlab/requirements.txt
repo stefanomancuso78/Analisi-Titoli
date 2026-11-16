@@ -1,0 +1,3 @@
+# Separate offline research worker, not Cloudflare runtime.
+Riskfolio-Lib==7.4.1
+scikit-learn==1.8.0
