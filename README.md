@@ -1,5 +1,7 @@
 # StokIQ
 
+Per intervenire senza crediti dell’assistente: [guida di manutenzione](docs/MANUTENZIONE_SENZA_ASSISTENTE.md). Il workflow GitHub verifica test e build; il merge non pubblica automaticamente sul sito Sites attuale.
+
 Registro pubblico di previsioni, casi e osservazioni. Worker ESM senza dipendenze, archivio D1, strumenti MCP con scritture riservate al proprietario tramite identità verificata Sites.
 
 ## Stato

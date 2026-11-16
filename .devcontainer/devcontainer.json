@@ -1,0 +1,6 @@
+{
+  "name": "StokIQ maintenance",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:24",
+  "postCreateCommand": "mkdir -p .openai && if [ ! -f .openai/hosting.json ]; then cp .openai/hosting.example.json .openai/hosting.json; fi",
+  "customizations": {"vscode": {"extensions": []}}
+}

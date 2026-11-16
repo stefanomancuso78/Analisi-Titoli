@@ -1,0 +1,29 @@
+name: Verify StokIQ
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Prepare isolated hosting example
+        run: |
+          mkdir -p .openai
+          if [ ! -f .openai/hosting.json ]; then cp .openai/hosting.example.json .openai/hosting.json; fi
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Save build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stokiq-worker-${{ github.sha }}
+          path: dist/server/index.js
+          retention-days: 7
