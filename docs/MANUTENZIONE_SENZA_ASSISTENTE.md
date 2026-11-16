@@ -44,6 +44,7 @@ Comandi disponibili:
 await StokIQMaintenance.status()          // stato operativo
 await StokIQMaintenance.tests()           // tre test e motivi delle esclusioni
 await StokIQMaintenance.downloadStatus()  // salva il report JSON sul proprio dispositivo
+await StokIQMaintenance.sourceRefresh()   // una fonte dovuta, con rotazione equa
 await StokIQMaintenance.performance()     // calcolo/registrazione delle performance
 await StokIQMaintenance.operations()      // controlli operativi
 await StokIQMaintenance.backupStep()      // un avanzamento del backup, se dovuto

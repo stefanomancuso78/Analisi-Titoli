@@ -6,7 +6,7 @@ import {flStatus,flCapture,flTriage} from './flow-health.js';
 import {managerStatus,semanticReader,MANAGER_STATUS_HTML,MANAGER_STATUS_UI} from './manager-status.js';
 import {rhSeal} from './recovery-handoff.js';
 import {lvValue} from './legacy-valuation.js';
-import {shStatus,SOURCE_HEALTH_HTML,SOURCE_HEALTH_UI} from './source-health.js';
+import {shStatus,shRefreshPlan,SOURCE_HEALTH_HTML,SOURCE_HEALTH_UI} from './source-health.js';
 import {bkStatus} from './backup-pages.js';
 import {osRun,osPortfolio,osBenchmark,osBackup,osStatus,osReadPortfolio,osRecoveryRecord} from './operational-steps.js';
 import {mrCycle,mrStatus,REACTION_HTML,REACTION_UI} from './market-reaction.js';
@@ -134,6 +134,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.acquisition_audit)return aqAudit(env);
  if(name==='list_research'&&a.flow_status)return flStatus(env);
  if(name==='list_research'&&a.manager_status)return managerStatus(env);
+ if(name==='list_research'&&a.source_refresh_plan)return shRefreshPlan(env);
  if(name==='list_research'&&a.source_health)return shStatus(env);
  if(name==='list_research'&&a.operational_status)return osStatus(env);
  if(name==='list_research'&&a.backup_recovery_credentials){if(env.REQUEST_ROLE!=='owner')throw Error('Verifica credenziali backup riservata al proprietario');return exRecoveryCredentials(env,a.backup_recovery_credentials)}
@@ -142,7 +143,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.performance_stock){if(!/^[A-Z0-9.\-]{1,30}$/.test(a.performance_stock))throw Error('Simbolo non valido');return pcStock(env,a.performance_stock)}
  if(name==='list_research'&&a.performance_status)return pcGroups(env);
  if(name==='list_research'&&a.changes_status)return changesStatus(env,simPrincipal(req),a.since||null);
- if(name==='list_research'&&a.ui_status)return {version:103,tests_navigation:HTML.includes('href="#test"'),tooltip_css:HTML.slice(HTML.indexOf('<style>'),HTML.indexOf('</style>')).includes('#product-tooltip{position:fixed'),prominent_entry:HTML.includes('class="product-entry"'),default_workspace:'test'};
+ if(name==='list_research'&&a.ui_status)return {version:104,tests_navigation:HTML.includes('href="#test"'),tooltip_css:HTML.slice(HTML.indexOf('<style>'),HTML.indexOf('</style>')).includes('#product-tooltip{position:fixed'),prominent_entry:HTML.includes('class="product-entry"'),default_workspace:'test'};
  if(name==='list_research'&&a.news_status)return {...await nwStatus(env),controls:await ncStatus(env)};
  if(name==='list_research'&&a.news_queue)return nwQueue(env);
  if(name==='list_research'&&a.fundamentals)return {...await fnStatus(env,a.symbol||null),assertions:await fnAssertions(env,a.symbol||null)};
@@ -195,6 +196,7 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.repair_public_redirects){const pattern="(last_error LIKE '%HTTP 301%' OR last_error LIKE '%HTTP 302%' OR last_error LIKE '%HTTP 303%' OR last_error LIKE '%HTTP 307%' OR last_error LIKE '%HTTP 308%')";const production=await env.DB.prepare("UPDATE prod_sources SET last_poll=NULL,last_status='never',last_error=NULL,next_poll='' WHERE last_status='error' AND "+pattern).run(),financial=await env.DB.prepare("UPDATE observation_sources SET last_poll=NULL,last_status=NULL,last_error=NULL WHERE last_status='error' AND "+pattern).run();return {production:production.meta?.changes??production.changes??null,financial:financial.meta?.changes??financial.changes??null,scope:'Retry only redirect errors; access denials and rate-limit backoffs are not reset'}}
  if(name==='refresh_pattern_calibration'&&a.recovery_key_handoff){if(env.REQUEST_ROLE!=='owner')throw Error('Trasferimento chiave riservato al proprietario');return rhSeal(env,a.recovery_key_handoff)}
  if(name==='refresh_pattern_calibration'&&a.recovery_rehearsal){if(env.REQUEST_ROLE!=='owner')throw Error('Registrazione ripristino riservata al proprietario');return osRecoveryRecord(env,a.recovery_rehearsal)}
+ if(name==='refresh_pattern_calibration'&&a.source_refresh_cycle){const plan=await shRefreshPlan(env);if(!plan.next)return {state:'no_sources_due',plan};const run=await osRun(env,'acquire',()=>pdCycle(env,{source_limit:1,source_id:plan.next.id,trigger:'scheduled',acquisition_only:true},{research:()=>call('list_research',{},req,env)}),a.operation_id);if(!run.replayed&&run.result?.scans?.length)await env.DB.prepare("INSERT INTO prod_settings VALUES ('source_refresh_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(plan.cursor+1)).run();return {...run,source_refresh:plan.next,lane:plan.lane}}
  if(name==='refresh_pattern_calibration'&&a.operational_step){const steps={acquire:()=>pdCycle(env,{source_limit:1,source_id:a.source_id||null,trigger:a.trigger||'scheduled',acquisition_only:true},{research:()=>call('list_research',{},req,env)}),production_followup:()=>pdCycle(env,{followup_only:true,trigger:'scheduled'},{research:()=>call('list_research',{},req,env),market:offset=>call('refresh_market_comparisons',{offset,limit:1},req,env)}),study_init:async()=>({protocol:await exEnsure(env),samples:await seedStudySamples(req,env)}),operations:()=>exOperations(env,{}),portfolio:()=>osPortfolio(env,fxFor,p=>lvValue(env,p,fxFor)),benchmark:()=>osBenchmark(env,symbol=>call('refresh_market_comparisons',{benchmark_symbol:symbol,limit:1},req,env)),backup:()=>osBackup(env),research_acquire:()=>rfCycle(env),research_resume:()=>rfResume(env),intelligence:()=>iqCycle(env),semantic_samples:()=>seedSemanticSamples(req,env)};if(!steps[a.operational_step])throw Error('Fase operativa sconosciuta');return osRun(env,a.operational_step,steps[a.operational_step],a.operation_id)}
  if(name==='refresh_pattern_calibration'&&a.backup_now)return {backup:await exBackup(env)};
  if(name==='refresh_pattern_calibration'&&a.research_retry)return opRetry(env,a.research_retry,simPrincipal(req)||'authenticated-admin');
@@ -391,7 +393,7 @@ export default {async fetch(req,env){
  else return json({jsonrpc:'2.0',id:b.id??null,error:{code:-32601,message:'Method not found'}});
  return json({jsonrpc:'2.0',id:b.id??null,result});}
  if(url.pathname!=='/'&&url.pathname!=='/admin'&&url.pathname!=='/impostazioni')return new Response('Not found',{status:404});
- return new Response(HTML,{headers:{'X-StokIQ-UI-Version':'103','Cache-Control':'no-store','Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self' https://chatgpt.com https://*.chatgpt.com",'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'}});
+ return new Response(HTML,{headers:{'X-StokIQ-UI-Version':'104','Cache-Control':'no-store','Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self' https://chatgpt.com https://*.chatgpt.com",'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'}});
  }catch(e){return json({error:e.message||'Errore temporaneo'},400)}
 }};
 const HTML=String.raw`<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>StokIQ — Le ipotesi incontrano i fatti</title><meta name="stokiq-ui-version" content="81"><link rel="icon" type="image/png" href="/stokiq-logo-v2.png"><meta name="description" content="Registro riservato di previsioni di mercato con data di pubblicazione, fonti e risultati nel tempo."><style>

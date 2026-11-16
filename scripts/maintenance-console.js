@@ -8,6 +8,7 @@
     status:()=>read('/api/manager-status'),
     tests:()=>read('/api/parallel'),
     performance:()=>action({performance_cycle:true}),
+    sourceRefresh:()=>action({source_refresh_cycle:true,operation_id:'manual:sources:'+crypto.randomUUID()}),
     operations:()=>action({operational_step:'operations',operation_id:'manual:'+crypto.randomUUID()}),
     backupStep:()=>action({operational_step:'backup',operation_id:'manual:backup:'+crypto.randomUUID()}),
     async downloadStatus(){const payload={at:new Date().toISOString(),manager:await read('/api/manager-status'),tests:await read('/api/parallel'),performance:await read('/api/performance')};const u=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='stokiq-status-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);return {download_started:true};}
