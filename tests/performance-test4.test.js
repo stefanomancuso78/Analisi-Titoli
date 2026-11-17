@@ -41,3 +41,14 @@ test('Unverified Test 4 protocol does not display a numerical return',async()=>{
  assert.equal(p.value,null);
  assert.equal(p.integrity,false);
 });
+
+test('cost-only same-day entry snapshots remain immutable but are not plotted as observed returns',async()=>{
+ const e=env(),at='2026-11-16T16:13:50Z',entry='2026-11-13',costOnly=.999/1.001-1,details=['BWXT','ANET'].map(symbol=>({symbol,net_return:costOnly,measurement:{entry_date:entry,latest_available_date:entry,code:'measured'}}));
+ e.sqlite.prepare('INSERT INTO performance_snapshots VALUES (?,?,?,?,?,?)').run('test-2|2026-11-16T16','test-2','2026-11-16T16',at,costOnly*100,JSON.stringify({label:'Test 2',integrity:true,measured:2,total:19,measurement_details:details}));
+ const row=(await pcGroups(e)).groups.find(g=>g.id==='test-2').points[0];
+ assert.equal(row.value,null);
+ assert.equal(row.recorded_value,costOnly*100);
+ assert.equal(row.excluded_cost_only_entry,true);
+ assert.equal(row.state,'awaiting_post_entry_close');
+ assert.equal(e.sqlite.prepare("SELECT value FROM performance_snapshots WHERE series_id='test-2'").get().value,costOnly*100);
+});
