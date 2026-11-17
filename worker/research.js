@@ -32,7 +32,7 @@ export async function rfPlan(env){
  const analyses=[...new Map([...recent,...aged].map(r=>[r.id,r])).values()];
  const proposals=[];
  for(const r of analyses){
-  const a=JSON.parse(r.payload),high=r.decision==='qualified'||(a.direction==='positive'&&a.materiality==='high'&&a.issuer_attribution_confirmed===true);
+  const a=JSON.parse(r.payload),high=r.decision==='qualified'||(a.direction!=='neutral'&&a.direction!=='uncertain'&&a.materiality==='high'&&a.issuer_attribution_confirmed===true);
   if(budget.mode==='backlog_drain'&&!high)continue;
   for(const g of rfGaps(a)){
    if(budget.mode==='backlog_drain'&&!['financial_context','counter_evidence'].includes(g.kind))continue;
