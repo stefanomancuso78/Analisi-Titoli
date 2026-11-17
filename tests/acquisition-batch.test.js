@@ -5,8 +5,53 @@ const dep={repairIndexes:async()=>{},resolveStructured:async()=>{},enqueue:async
 test('canonical tracking cleanup preserves business parameters and official patent route validates publication identity',()=>{assert.equal(aqCanonical('https://issuer.org/r?pn=EP123A1&utm_source=x#top'),'https://issuer.org/r?pn=EP123A1');const row={url:'https://worldwide.espacenet.com/patent/search?q=pn%3DEP123A1',payload:JSON.stringify({facts:{publication_number:'EP123A1'}})};assert.equal(aqRoute(row).url,'https://ops.epo.org/3.2/rest-services/published-data/publication/docdb/EP.123.A1/abstract');const data={'exchange-document':{'@country':'EP','@doc-number':'123','@kind':'A1',abstract:{'@lang':'en',p:{$:'Actual abstract text'}}}};assert.equal(aqAbstract(data),'Actual abstract text');assert.equal(aqPatentMatches(data,'EP123A1'),true);assert.equal(aqPatentMatches(data,'EP999A1'),false)});
 test('screen is conservative on generic research but leaves material new issuers eligible and separates routine CFO from crisis',()=>{assert.equal(asDecision({title:'Artificial intelligence methods for generic modelling'},{}).decision,'metadata_review');assert.equal(asDecision({title:'NewCo earnings and raised guidance'},{verified:true,tracked:false}).decision,'download');assert.equal(asDecision({title:'Board appoints new CFO in March'},{verified:true,tracked:true}).decision,'metadata_only');assert.equal(asDecision({title:'CFO resigns during fraud investigation'},{verified:true,tracked:true}).decision,'download');assert.equal(asDecision({title:'Board appoints new CEO'},{verified:true,tracked:true}).decision,'download')});
 test('held metadata is retained with a reason and no HTTP request or fictitious completion',async()=>{const e=fixture();job(e,'1','https://issuer.org/study','Artificial intelligence research');e.sqlite.prepare("UPDATE graph_jobs SET payload=json_set(payload,'$.issuer',NULL)").run();let calls=0;await aqCycle(e,{...dep,fetchDocument:async()=>{calls++;throw Error('Must not download')}});assert.equal(calls,0);const r=e.sqlite.prepare('SELECT * FROM graph_jobs').get();assert.equal(r.state,'metadata_review');assert.equal(JSON.parse(r.payload).screening.version,'metadata-filter-v2');assert.equal((await aqAudit(e)).states.metadata_review,1);e.sqlite.close()});
-test('batch downloads concurrently across domains, limits one per domain, and isolates rate limits',async()=>{const e=fixture();job(e,'1','https://alpha.org/a');job(e,'2','https://alpha.org/b');job(e,'3','https://beta.org/a');job(e,'4','https://gamma.org/a');let active=0,max=0;const activeHosts=new Set();const r=await aqCycle(e,{...dep,fetchDocument:async(url)=>{const host=new URL(url).hostname;assert.ok(!activeHosts.has(host));activeHosts.add(host);active++;max=Math.max(max,active);try{await new Promise(resolve=>setTimeout(resolve,10));if(host==='beta.org'){const error=Error('HTTP 429');error.status=429;error.retryAfter='7200';throw error}return {url,text:'<article>'+('Real issuer disclosure. '.repeat(15))+'</article>'}}finally{active--;activeHosts.delete(host)}}});assert.equal(max,3);assert.equal(r.processed.length,3);assert.equal(r.processed.filter(x=>x.state==='completed').length,2);const retry=e.sqlite.prepare("SELECT * FROM graph_jobs WHERE url='https://beta.org/a'").get();assert.equal(retry.state,'retry');const p=JSON.parse(retry.payload);assert.ok(Date.parse(p.next_attempt)>Date.now()+7100*1000);assert.ok(e.sqlite.prepare("SELECT value FROM prod_settings WHERE key='graph_domain_backoff:beta.org'").get());e.sqlite.close()});
+test('batch downloads concurrently across domains, limits one per domain, and isolates rate limits',async()=>{const e=fixture();job(e,'1','https://alpha.org/a');job(e,'2','https://alpha.org/b');job(e,'3','https://beta.org/a');job(e,'4','https://gamma.org/a');let active=0,max=0;const activeHosts=new Set();const r=await aqCycle(e,{...dep,fetchDocument:async(url)=>{const host=new URL(url).hostname;assert.ok(!activeHosts.has(host));activeHosts.add(host);active++;max=Math.max(max,active);try{await new Promise(resolve=>setTimeout(resolve,10));if(host==='beta.org'){const error=Error('HTTP 429');error.status=429;error.retryAfter='7200';throw error}return {url,text:'<article>'+('Real issuer disclosure. '.repeat(45))+'</article>'}}finally{active--;activeHosts.delete(host)}}});assert.equal(max,3);assert.equal(r.processed.length,3);assert.equal(r.processed.filter(x=>x.state==='completed').length,2);const retry=e.sqlite.prepare("SELECT * FROM graph_jobs WHERE url='https://beta.org/a'").get();assert.equal(retry.state,'retry');const p=JSON.parse(retry.payload);assert.ok(Date.parse(p.next_attempt)>Date.now()+7100*1000);assert.ok(e.sqlite.prepare("SELECT value FROM prod_settings WHERE key='graph_domain_backoff:beta.org'").get());e.sqlite.close()});
 test('selection preserves old work, caps each domain, and respects future domain cooldowns',()=>{const rows=[{id:'old',url:'https://old.org/a',payload:'{}',priority:0,wait_since:'2026-01-01'},{id:'urgent',url:'https://urgent.org/a',payload:'{}',priority:20,wait_since:'2026-02-01'},{id:'same',url:'https://urgent.org/b',payload:'{}',priority:19,wait_since:'2026-02-02'},{id:'blocked',url:'https://blocked.org/a',payload:'{}',priority:30,wait_since:'2026-02-03'}];const r=aqSelect(rows,{'blocked.org':{until:'2099-01-01'}},0,3);assert.deepEqual(r.map(x=>x.id),['old','urgent'])});
 test('screening revisits a held event after verified identity arrives without deleting its provenance',async()=>{const e=fixture();job(e,'abc','https://issuer.org/new','NewCo financial results');e.sqlite.prepare("UPDATE graph_jobs SET payload=json_set(payload,'$.issuer',NULL,'$.event_id','new-event')").run();await asScreen(e);assert.equal(e.sqlite.prepare('SELECT state FROM graph_jobs').get().state,'metadata_review');e.sqlite.prepare('INSERT INTO prod_events VALUES (?,?,?,?,?,?,?)').run('new-event','sec-filings',null,new Date().toISOString(),'AAA','observed',JSON.stringify({description:'Item 2.02 financial results'}));e.sqlite.prepare("UPDATE graph_jobs SET payload=json_set(payload,'$.screening.review_after','2000-01-01')").run();await asScreen(e);const r=e.sqlite.prepare('SELECT state,payload FROM graph_jobs').get();assert.equal(r.state,'pending');assert.equal(JSON.parse(r.payload).issuer,'AAA');e.sqlite.close()});
 
 test('FDA product supplements cannot be dismissed as generic science when issuer metadata is missing',()=>{assert.equal(asDecision({source_id:'fda',title:'FDA SUPPL · HYMPAVZI'},{}).decision,'download');assert.equal(asDecision({source_id:'fda',title:'FDA SUPPL · WELIREG'},{}).decision,'download');assert.equal(asDecision({source_id:'fda',title:'Product',url:'https://www.accessdata.fda.gov/drugsatfda_docs/label/2026/example.pdf'},{}).decision,'download');assert.equal(asDecision({source_id:'europepmc',title:'A general scientific review'},{}).decision,'metadata_review')});
+
+test('short primary HTML is retained as partial evidence rather than falsely completed for semantic analysis',async()=>{
+ const e=fixture();job(e,'brief','https://issuer.org/brief','Acme earnings report');
+ let calls=0;
+ const r=await aqCycle(e,{...dep,fetchDocument:async url=>{calls++;return {url,text:'<article>'+('Issuer brief evidence. '.repeat(19))+'</article>'}}});
+ assert.equal(calls,1);
+ assert.equal(r.processed.length,1);
+ assert.equal(r.processed[0].state,'needs_alternative');
+ assert.equal(r.processed[0].semantic_ready,false);
+ assert.match(r.processed[0].reason,/700-character/);
+ const saved=e.sqlite.prepare("SELECT state,payload FROM graph_jobs WHERE id='brief'").get(),payload=JSON.parse(saved.payload);
+ assert.equal(saved.state,'needs_alternative');
+ assert.equal(payload.semantic_ready,0);
+ assert.equal(payload.resolution,'short_primary_html_needs_full_text');
+ assert.ok(payload.document_id);
+ const retry=await aqCycle(e,{...dep,fetchDocument:async()=>{throw Error('Short page must not be repeatedly fetched without a verified alternative')}});
+ assert.equal(retry.processed.length,0);
+ e.sqlite.close();
+});
+test('long primary HTML reaches completed state with explicit readiness flag',async()=>{
+ const e=fixture();job(e,'full','https://issuer.org/full','Acme comprehensive report');
+ const r=await aqCycle(e,{...dep,fetchDocument:async url=>({url,text:'<article>'+('Acme verified full economic statement. '.repeat(30))+'</article>'})});
+ assert.equal(r.processed[0].state,'completed');
+ assert.equal(r.processed[0].semantic_ready,true);
+ assert.equal(JSON.parse(e.sqlite.prepare("SELECT payload FROM graph_jobs WHERE id='full'").get().payload).semantic_ready,1);
+ e.sqlite.close();
+});
+
+test('a previously stored short primary HTML cannot be reused to mark a later acquisition full-text complete',async()=>{
+ const e=fixture(),url='https://issuer.org/earnings';
+ job(e,'rescan',url,'Acme earnings disclosure');
+ e.sqlite.prepare('INSERT INTO graph_documents VALUES (?,?,?,?,?,?,?)').run(
+ 'cached-short',url,'cached-hash','Acme earnings',null,new Date().toISOString(),
+ JSON.stringify({issuer:'AAA',primary:true,extraction_basis:'document_text',text:'Brief issuer update. '.repeat(20)}));
+ let downloaded=0;
+ const r=await aqCycle(e,{...dep,fetchDocument:async source=>{
+  downloaded++;
+  return {url:source,text:'<article>'+('Verified current full financial statement. '.repeat(30))+'</article>'};
+ }});
+ assert.equal(downloaded,1);
+ assert.equal(r.processed[0].state,'completed');
+ assert.equal(r.processed[0].reused,undefined);
+ assert.equal(r.processed[0].semantic_ready,true);
+ e.sqlite.close();
+});
