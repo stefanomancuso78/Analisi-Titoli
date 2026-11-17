@@ -11,7 +11,44 @@ const rfDays=n=>n*86400000,rfHost=s=>{try{return new URL(s).hostname}catch{retur
 export const rfRules={id:'research-followup-v1',parent:'semantic-study-v2',changes_prediction_weights:false,revisions:'Append-only, evidence versioned, next-close prospective entry; no rewrite of existing episodes',max_attempts:4,max_jobs_per_cycle:2,evidence:'Acquired primary text or structured primary records; exact multi-document citations; unknown is valid',repeat:'Reassess only with changed evidence; no daily repetition of the same unanswered question'};
 export async function rfEnsure(env){const payload=JSON.stringify({...rfRules,implementation:await rfHash([rfGaps,rfValidate,rfPublish].map(f=>f.toString()).join('\n'))}),digest=await rfHash(payload);await env.DB.prepare('INSERT OR IGNORE INTO research_protocols VALUES (?,?,?,?)').bind(rfRules.id,rfNow(),digest,payload).run();const row=await rfFirst(env,'SELECT * FROM research_protocols WHERE id=?',rfRules.id);return {...rfRules,created_at:row.created_at,digest:row.digest,integrity:digest===row.digest&&await rfHash(row.payload)===row.digest}}
 export function rfGaps(a){const result=[];if(a.direction==='negative')return [{kind:'counter_evidence',priority:90,question:'Verificare la portata e l’attualità degli elementi contrari prima di mantenere la tesi.'}];if(a.materiality==='unknown'||a.materiality==='medium'||a.materiality==='high')result.push({kind:'financial_context',priority:a.direction==='positive'?100:70,question:'Dimensionare il fatto rispetto a ricavi, utili, cassa e capitale del gruppo; mantenere valuta, periodo e fonte.'});if(a.timeframe==='unknown'||a.direction==='positive')result.push({kind:'timing_execution',priority:85,question:'Trovare date, condizioni, esecuzione effettiva, lancio commerciale e diritti economici; non confondere autorizzazione con esecuzione.'});if(a.direction!=='neutral')result.push({kind:'counter_evidence',priority:75,question:'Cercare cancellazioni, limiti, sicurezza, concorrenza ed evidenze che smentiscono la tesi, distinguendo ipotesi e fatti.'});if(a.direction==='positive')result.push({kind:'expectations',priority:65,question:'Confrontare guidance e comunicazioni precedenti: stabilire cosa è incrementale e cosa resta non verificabile senza consenso affidabile.'});return result}
-export async function rfPlan(env){const rows=await rfAll(env,'SELECT * FROM semantic_analyses ORDER BY created_at DESC LIMIT 500');let created=0;for(const r of rows){const a=JSON.parse(r.payload);for(const g of rfGaps(a)){const id=await rfHash(rfRules.id+'|'+r.id+'|'+g.kind),now=rfNow();const exists=await rfFirst(env,'SELECT id FROM research_jobs WHERE id=?',id);if(exists)continue;await env.DB.prepare('INSERT OR IGNORE INTO research_jobs VALUES (?,?,?,?,?,?,0,?,NULL,?,?,?)').bind(id,r.id,r.symbol,g.kind,'pending',g.priority,now,now,now,JSON.stringify({...g,parent_event:a.event_summary,source_document_id:r.document_id,source_url:a.document_url})).run();created++}}return {created}}
+// Admission control is separate from the frozen research-followup-v1 requirements.
+// Never discard an assessment or alter the gaps defined by rfGaps; defer creating
+// additional work until the measured queue can sustainably process it.
+export function rfPlanBudget(active,newToday){const drain=active>=120,limit=drain?12:24;return {mode:drain?'backlog_drain':'balanced',daily_limit:limit,remaining:Math.max(0,limit-newToday),backlog_reserved_share:drain?0.75:0.5};}
+export async function rfPlan(env){
+ const now=rfNow(),today=now.slice(0,10)+'T00:00:00.000Z';
+ const [activeRow,newRow,totalRow,cursorRow]=await Promise.all([
+  rfFirst(env,"SELECT COUNT(*) n FROM research_jobs WHERE state IN ('pending','retry','waiting_source')"),
+  rfFirst(env,'SELECT COUNT(*) n FROM research_jobs WHERE created_at>=?',today),
+  rfFirst(env,'SELECT COUNT(*) n FROM semantic_analyses'),
+  rfFirst(env,"SELECT value FROM prod_settings WHERE key='rf_planning_cursor'")
+ ]);
+ const active=activeRow?.n||0,budget=rfPlanBudget(active,newRow?.n||0),total=totalRow?.n||0,offset=total?((Number(cursorRow?.value)||0)%total):0;
+ const [recent,aged]=await Promise.all([
+  rfAll(env,'SELECT * FROM semantic_analyses ORDER BY created_at DESC,id DESC LIMIT 400'),
+  rfAll(env,'SELECT * FROM semantic_analyses ORDER BY created_at ASC,id ASC LIMIT 200 OFFSET ?',offset)
+ ]);
+ if(total)await env.DB.prepare("INSERT INTO prod_settings VALUES ('rf_planning_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String((offset+200)%total)).run();
+ const analyses=[...new Map([...recent,...aged].map(r=>[r.id,r])).values()];
+ const proposals=[];
+ for(const r of analyses){
+  const a=JSON.parse(r.payload),high=r.decision==='qualified'||(a.direction==='positive'&&a.materiality==='high'&&a.issuer_attribution_confirmed===true);
+  if(budget.mode==='backlog_drain'&&!high)continue;
+  for(const g of rfGaps(a)){
+   if(budget.mode==='backlog_drain'&&!['financial_context','counter_evidence'].includes(g.kind))continue;
+   proposals.push({r,a,g,rank:(r.decision==='qualified'?1000:0)+g.priority});
+  }
+ }
+ proposals.sort((a,b)=>b.rank-a.rank||b.r.created_at.localeCompare(a.r.created_at)||a.r.id.localeCompare(b.r.id));
+ let created=0,already=0;for(const {r,a,g} of proposals){
+  if(created>=budget.remaining)break;
+  const id=await rfHash(rfRules.id+'|'+r.id+'|'+g.kind);
+  if(await rfFirst(env,'SELECT id FROM research_jobs WHERE id=?',id)){already++;continue}
+  await env.DB.prepare('INSERT OR IGNORE INTO research_jobs VALUES (?,?,?,?,?,?,0,?,NULL,?,?,?)').bind(id,r.id,r.symbol,g.kind,'pending',g.priority,now,now,now,JSON.stringify({...g,parent_event:a.event_summary,source_document_id:r.document_id,source_url:a.document_url})).run();created++;
+ }
+ return {created,mode:budget.mode,daily_limit:budget.daily_limit,new_today:(newRow?.n||0)+created,pending_before:active,assessments_scanned:analyses.length,already_existing:already,deferred:trueIfFalse(budget.remaining<proposals.length),note:'No historical assessment is removed; new follow-up creation is bounded while earlier due work drains. Planning cursor visits older analyses over time.'};
+}
+function trueIfFalse(v){return !!v}
 export async function rfHosts(env,symbol){const result=new Set(['www.sec.gov','data.sec.gov','www.fda.gov','clinicaltrials.gov','www.ema.europa.eu']);const rows=await rfAll(env,"SELECT payload FROM prod_sources WHERE json_extract(payload,'$.symbol')=? AND json_extract(payload,'$.primary')=1",symbol);for(const r of rows){const p=JSON.parse(r.payload);for(const key of ['url','docs'])if(rfHost(p[key]))result.add(rfHost(p[key]))}if(symbol==='BAYN.DE'){result.add('www.bayer.com');result.add('reports.bayer.com')}return [...result]}
 export function rfURL(value,hosts){let u;try{u=new URL(value)}catch{throw Error('URL non valido')}if(u.protocol!=='https:'||u.username||u.password||u.port||!hosts.includes(u.hostname)||/^(?:\d|\[)/.test(u.hostname))throw Error('Fonte fuori dai domini primari ammessi');u.hash='';return u.href}
 async function rfFetch(url,hosts,max=2000000){const safe=rfURL(url,hosts),{response:r}=await gFetchResponse(safe,hosts,{userAgent:'StokIQResearch/4.0 (https://stokiq.online)',accept:'application/json,text/html,application/xhtml+xml'});if(!r.ok){const e=new Error('Fonte HTTP '+r.status);e.retryAfter=r.headers.get('retry-after');e.status=r.status;throw e}if(Number(r.headers.get('content-length'))>max)throw Error('Documento oltre il limite di acquisizione');if(!/json|html|text|xml/i.test(r.headers.get('content-type')||''))throw Error('Formato non leggibile automaticamente; approfondimento richiesto');const reader=r.body.getReader(),chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>max){await reader.cancel();throw Error('Documento oltre il limite di acquisizione')}chunks.push(value)}const body=new Uint8Array(size);let at=0;for(const c of chunks){body.set(c,at);at+=c.length}return new TextDecoder().decode(body)}
