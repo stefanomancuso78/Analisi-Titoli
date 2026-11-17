@@ -24,6 +24,7 @@ import {t4Cycle,t4Ensure,t4Status} from './test4.js';
 import {quoteSweepSymbols} from './quote-rotation.js';
 import {COMMERCE_HTML,COMMERCE_UI} from './commerce-ui.js';
 import {t3Cycle,t3Status,testGroupMean,testCurrentReturn,managerFeedback,managerFeedbackList} from './parallel.js';
+import {lrCycle,lrStatus} from './learning-challenger.js';
 import {PRODUCT_HTML,PRODUCT_UI,PRODUCT_CSS} from './product-ui.js';
 import {iqCycle,iqStatus,iqReview,iqQueue,iqDeltaReview} from './intelligence.js';
 import {mtEnsure,mtCase,mtRun,mtReview,mtStatus} from './methods.js';
@@ -45,7 +46,7 @@ import {rtCycle,rtStatus,rtImport} from './retrospective.js';
 import {scCycle,scStatus} from './scout.js';
 import {gStatus,gCycle} from './graph.js';
 import {exRecoveryExport,exRecoveryCredentials,exBackup,exOperations,exApi,exEnsure,exCycle,exStatus,exValue,exPrepare,exBenchmarkSymbols,exRules} from './experiment.js';
-import {pdApi,pdCycle,pdRole,pdRedactRegistry,pdStatus,pdSelection,pdMarketRefresh,pdInvestmentSignals,pdPortfolioAudit,pdResearchNames,pdAllocationExplanation,pdPortfolioView,pdDiscoveries} from './production.js';
+import {pdEnsureSeeds,pdApi,pdCycle,pdRole,pdRedactRegistry,pdStatus,pdSelection,pdMarketRefresh,pdInvestmentSignals,pdPortfolioAudit,pdResearchNames,pdAllocationExplanation,pdPortfolioView,pdDiscoveries} from './production.js';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const sectors=['Biomedicale','Intelligenza artificiale','Infrastrutture informatiche','Energia'];
 const sources=[['SEC EDGAR','https://www.sec.gov/edgar/search/','Bilanci, insider e comunicazioni ufficiali'],['ClinicalTrials.gov','https://clinicaltrials.gov/','Fasi, risultati e scadenze dei trial'],['FDA','https://www.fda.gov/','Approvazioni e decisioni regolatorie USA'],['EMA','https://www.ema.europa.eu/','Valutazioni e autorizzazioni europee'],['Espacenet','https://worldwide.espacenet.com/','Brevetti, richiedenti e stato delle domande'],['CORDIS','https://cordis.europa.eu/','Ricerca e progetti europei']];
@@ -171,6 +172,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.test4_status)return t4Status(env);
  if(name==='list_research'&&a.market_readiness)return marketReadiness(env);
  if(name==='list_research'&&a.parallel_status)return parallelStatus(env);
+ if(name==='list_research'&&a.learning_status)return lrStatus(env);
  if(name==='list_research'&&a.intelligence_status)return iqStatus(env,a.symbol||null);
  if(name==='list_research'&&a.intelligence_queue)return iqQueue(env);
  if(name==='list_research'&&a.methods_status)return mtStatus(env,env.REQUEST_ROLE==='owner'&&a.unblind===true);
@@ -216,7 +218,7 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.repair_public_redirects){const pattern="(last_error LIKE '%HTTP 301%' OR last_error LIKE '%HTTP 302%' OR last_error LIKE '%HTTP 303%' OR last_error LIKE '%HTTP 307%' OR last_error LIKE '%HTTP 308%')";const production=await env.DB.prepare("UPDATE prod_sources SET last_poll=NULL,last_status='never',last_error=NULL,next_poll='' WHERE last_status='error' AND "+pattern).run(),financial=await env.DB.prepare("UPDATE observation_sources SET last_poll=NULL,last_status=NULL,last_error=NULL WHERE last_status='error' AND "+pattern).run();return {production:production.meta?.changes??production.changes??null,financial:financial.meta?.changes??financial.changes??null,scope:'Retry only redirect errors; access denials and rate-limit backoffs are not reset'}}
  if(name==='refresh_pattern_calibration'&&a.recovery_key_handoff){if(env.REQUEST_ROLE!=='owner')throw Error('Trasferimento chiave riservato al proprietario');return rhSeal(env,a.recovery_key_handoff)}
  if(name==='refresh_pattern_calibration'&&a.recovery_rehearsal){if(env.REQUEST_ROLE!=='owner')throw Error('Registrazione ripristino riservata al proprietario');return osRecoveryRecord(env,a.recovery_rehearsal)}
- if(name==='refresh_pattern_calibration'&&a.source_refresh_cycle){const capacity=flBackpressure(await flStatus(env));if(capacity.deferred||capacity.discovery_paused)return {state:'deferred_backpressure',capacity,notice:'Existing evidence queues have priority; retry discovery after downstream processing.'};const plan=await shRefreshPlan(env);if(!plan.next)return {state:'no_sources_due',plan};const nowHour=new Date().toISOString().slice(0,13),key='source_refresh_budget:'+nowHour;
+ if(name==='refresh_pattern_calibration'&&a.source_refresh_cycle){await pdEnsureSeeds(env);const capacity=flBackpressure(await flStatus(env));if(capacity.deferred||capacity.discovery_paused)return {state:'deferred_backpressure',capacity,notice:'Existing evidence queues have priority; retry discovery after downstream processing.'};const plan=await shRefreshPlan(env);if(!plan.next)return {state:'no_sources_due',plan};const nowHour=new Date().toISOString().slice(0,13),key='source_refresh_budget:'+nowHour;
  await env.DB.prepare('INSERT OR IGNORE INTO prod_settings (key,value) VALUES (?,?)').bind(key,'0').run();const reserved=await env.DB.prepare('UPDATE prod_settings SET value=CAST(value AS INTEGER)+1 WHERE key=? AND CAST(value AS INTEGER)<? RETURNING value').bind(key,capacity.source_max_per_hour).first();if(!reserved)return {state:'deferred_hourly_budget',capacity,plan,notice:'Hourly source limit reached; preserve reading capacity and provider backoff.'};
  const run=await osRun(env,'acquire',()=>pdCycle(env,{source_limit:1,source_id:plan.next.id,trigger:'scheduled',acquisition_only:true},{research:()=>call('list_research',{},req,env)}),a.operation_id);
  if(!run.replayed&&run.result?.scans?.length)await env.DB.prepare("INSERT INTO prod_settings VALUES ('source_refresh_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(plan.cursor+1)).run();
@@ -231,9 +233,9 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.observation_source)return fnRegister(env,a.observation_source);
  if(name==='refresh_pattern_calibration'&&a.capital_history_import)return cpImport(env,a.capital_history_import);
  if(name==='refresh_pattern_calibration'&&a.capital_cycle)return cpCycle(env,fxFor);
- if(name==='refresh_pattern_calibration'&&a.parallel_cycle){await t4Ensure(env);const parallel=await t3Cycle(env),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...parallel,test4,market};}
+ if(name==='refresh_pattern_calibration'&&a.parallel_cycle){await t4Ensure(env);const parallel=await t3Cycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...parallel,learning,test4,market};}
  if(name==='refresh_pattern_calibration'&&a.test4_cycle){const test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...test4,market};}
- if(name==='refresh_pattern_calibration'&&a.intelligence_cycle){await t4Ensure(env);const intelligence=await iqCycle(env),parallel=await t3Cycle(env),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {intelligence,parallel,test4,market};}
+ if(name==='refresh_pattern_calibration'&&a.intelligence_cycle){await t4Ensure(env);const intelligence=await iqCycle(env),parallel=await t3Cycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {intelligence,parallel,learning,test4,market};}
  if(name==='refresh_pattern_calibration'&&a.intelligence_delta_review)return iqDeltaReview(env,a.intelligence_delta_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.thesis_review)return iqReview(env,a.thesis_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.method_case)return mtCase(env,a.method_case);
@@ -394,6 +396,7 @@ export default {async fetch(req,env){
  if(url.pathname==='/api/fundamentals/source'){if(req.method!=='POST'||!owner(req,env))return json({error:'Operazione riservata'},403);if(req.headers.get('Origin')!==url.origin)return json({error:'Origine non consentita'},403);try{return json(await fnRegister(env,await req.json()),201)}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/parallel'&&req.method==='GET')return json(await parallelStatus(env));
  if(url.pathname==='/api/test4'&&req.method==='GET')return json(await t4Status(env));
+ if(url.pathname==='/api/learning'&&req.method==='GET')return json(await lrStatus(env));
  if(url.pathname==='/api/manager-feedback'){const principal=simPrincipal(req)||'shared-reader';if(req.method==='GET')return json({admin:owner(req,env),items:await managerFeedbackList(env,principal,owner(req,env))});if(req.method!=='POST')return json({error:'Metodo non ammesso'},405);if(req.headers.get('Origin')!==url.origin)return json({error:'Origine non consentita'},403);try{return json(await managerFeedback(env,await req.json(),principal),201)}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/intelligence'&&req.method==='GET'){const symbol=url.searchParams.get('symbol');if(symbol&&!/^[A-Z0-9.\-]{1,30}$/.test(symbol))return json({error:'Simbolo non valido'},400);return json({...await iqStatus(env,symbol),can_edit:owner(req,env)})}
  if(url.pathname==='/api/skills-review'&&req.method==='GET')return json(VERIFIED_SKILLS_DATA);
