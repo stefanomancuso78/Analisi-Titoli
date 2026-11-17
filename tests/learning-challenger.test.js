@@ -170,3 +170,16 @@ test('shadow monitor identifies cases missed by the ten-minute recording window,
  assert.equal(after.registration.overdue_missing,1);
  e.db.close();
 });
+
+test('both operational routes activate shadow monitoring before generating new Test 3 cases',()=>{
+ const routes=readFileSync('worker/index.js','utf8');
+ for(const route of ['parallel_cycle','intelligence_cycle']){
+  const first=routes.indexOf("a."+route+"){");
+  assert.ok(first>0,'missing route '+route);
+  const fragment=routes.slice(first,first+440);
+  const activation=fragment.indexOf('await lrActivate(env)');
+  const create=fragment.indexOf('await t3Cycle(env)');
+  const capture=fragment.indexOf('await lrCycle(env)');
+  assert.ok(activation>=0&&create>activation&&capture>create,'shadow order regression in '+route);
+ }
+});
