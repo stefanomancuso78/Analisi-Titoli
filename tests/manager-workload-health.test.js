@@ -13,6 +13,7 @@ function fixture(){
 
 test('manager panel separates ready semantic queue from pending research evidence and stale valuations',async()=>{
  const env=fixture(),db=env.sqlite;
+ for(const id of ['analysis1','analysis2']){db.prepare('INSERT INTO graph_documents VALUES (?,?,?,?,?,?,?)').run('doc-'+id,'https://issuer.org/'+id,'hash-'+id,'Test disclosure',null,'2026-11-11T10:00:00Z',JSON.stringify({text:'complete source document '.repeat(40),issuer:'AMD',primary:true}));db.prepare('INSERT INTO semantic_analyses VALUES (?,?,?,?,?,?,?)').run(id,'doc-'+id,'AMD','2026-11-11T10:00:00Z','test','research_only','{}')}
  db.prepare('INSERT INTO research_jobs VALUES (?,?,?,?,?,?,0,?,NULL,?,?,?)').run('research1','analysis1','AMD','counter_evidence','pending',65,'2026-11-11T10:00:00Z','2026-11-11T10:00:00Z','2026-11-11T10:00:00Z','{}');
  db.prepare('INSERT INTO research_jobs VALUES (?,?,?,?,?,?,0,?,NULL,?,?,?)').run('research2','analysis2','AMD','financial_context','evidence_ready',80,'2026-11-11T10:00:00Z','2026-11-11T10:00:00Z','2026-11-11T10:00:00Z','{}');
  db.prepare('INSERT INTO simulation_portfolios VALUES (?,?,?,?)').run('portfolio-1','study:fixture','2026-11-01T12:00:00Z',JSON.stringify({amount:10000,currency:'EUR',positions:[]}));
