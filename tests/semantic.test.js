@@ -13,3 +13,41 @@ test('anonymous and non-admin model writers are rejected',async()=>{for(const he
 test('authenticated semantic writer creates three distinct v2 paper samples without rewriting old portfolios',async()=>{const e=env();await seed(e);const originalFetch=globalThis.fetch;e.OWNER_EMAIL='owner@example.com';globalThis.fetch=async url=>{assert.match(String(url),/frankfurter/);return new Response(JSON.stringify({base:'EUR',date:day(-1),rates:{USD:1.1}}))};try{const r=await worker.fetch(new Request('https://example.org/mcp',{method:'POST',headers:{'oai-authenticated-user-email':'owner@example.com','oai-authenticated-user-id':'owner'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'refresh_pattern_calibration',arguments:{semantic_analysis:analysis()}}})}),e);const response=await r.json();assert.equal(response.result.isError,undefined,JSON.stringify(response));const portfolios=e.sqlite.prepare("SELECT principal,payload FROM simulation_portfolios").all();assert.equal(portfolios.length,3);for(const row of portfolios){assert.equal(row.principal,'study:semantic-study-v2');const p=JSON.parse(row.payload);assert.equal(p.protocol_id,smRules.version);assert.equal(p.allocation_engine,'semantic');assert.equal(p.cash,p.amount);assert.ok(p.positions.every(h=>h.quantity===0&&h.fill_state==='pending'))}}finally{globalThis.fetch=originalFetch}});
 
 test('truncated queue cannot be certified as a full economic reading',async()=>{const e=env();await seed(e);const expanded=text+' Additional material facts and caveats. '.repeat(2000);e.sqlite.prepare('UPDATE graph_documents SET payload=? WHERE id=?').run(JSON.stringify({...doc,text:expanded}),'doc');const queue=await smQueue(e);assert.equal(queue.items[0].truncated,true);await assert.rejects(()=>smSave(e,analysis(),'user:owner'),/troncato/);const partial=await smSave(e,analysis({review_scope:'partial',materiality:'unknown'}),'user:owner');assert.equal(partial.qualified,false);e.sqlite.close()});
+
+test('full review of multi-chunk primary document can be saved with complete ordered hash-bound coverage',async()=>{
+ const e=env();await seed(e);const long=text+' This issuer provides additional audited risk and financial disclosure. '.repeat(1050);
+ e.sqlite.prepare('UPDATE graph_documents SET payload=? WHERE id=?').run(JSON.stringify({...doc,text:long}),'doc');
+ const before=await smEnsure(e);assert.equal(before.integrity,true);
+ const queue=await smQueue(e);
+ assert.equal(queue.items[0].truncated,true);
+ assert.equal(queue.items[0].reading_chunk_size,45000);
+ assert.equal(queue.items[0].next_offset,45000);
+ const chunks=[],offsets=[];let offset=0;
+ do{const p=await smDocument(e,'doc',offset);chunks.push(p.text);offsets.push(p.offset);offset=p.next_offset;}while(offset!=null);
+ assert.equal(chunks.join(''),long);
+ assert.deepEqual(offsets,[0,45000]);
+ const report={...analysis(),reviewed_offsets:offsets,reviewed_content_hash:'hash'};
+ const saved=await smSave(e,report,'user:owner');
+ assert.equal(saved.qualified,true);
+ const record=JSON.parse(e.sqlite.prepare("SELECT payload FROM semantic_analyses WHERE document_id='doc'").get().payload);
+ assert.equal(record.reading_attestation.declaration,'all_offsets_declared');
+ assert.deepEqual(record.reading_attestation.reviewed_offsets,offsets);
+ assert.equal(record.reading_attestation.expected_chunks,2);
+ assert.match(record.reading_attestation.warning,/not independent proof/);
+ assert.equal((await smEnsure(e)).integrity,true);
+ e.sqlite.close();
+});
+test('long document cannot be certified with skipped, unordered or stale content-hash review claims',async()=>{
+ const e=env();await seed(e);const long=text+' Detailed issuer statement with economic uncertainties. '.repeat(1000);
+ e.sqlite.prepare('UPDATE graph_documents SET payload=? WHERE id=?').run(JSON.stringify({...doc,text:long}),'doc');
+ for(const extra of [
+  {reviewed_offsets:[0],reviewed_content_hash:'hash'},
+  {reviewed_offsets:[45000,0],reviewed_content_hash:'hash'},
+  {reviewed_offsets:[0,45000],reviewed_content_hash:'old-document-hash'},
+  {reviewed_offsets:[0,45000,45000],reviewed_content_hash:'hash'},
+ ]){
+  await assert.rejects(()=>smSave(e,analysis(extra),'user:owner'),/troncato/);
+ }
+ assert.equal(e.sqlite.prepare('SELECT COUNT(*) n FROM semantic_analyses').get().n,0);
+ e.sqlite.close();
+});
