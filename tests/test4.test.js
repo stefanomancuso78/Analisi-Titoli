@@ -16,12 +16,12 @@ const row=(symbol,date,close,sourceUrl=host,recorded=date+'T23:00:00.000Z')=>({s
 test('Test 4 starts only on an explicit cycle and never touches historical studies',async()=>{const e=env();assert.equal((await t4Status(e)).state,'not_started');const p=await t4Ensure(e,'2026-11-17T12:00:00.000Z');assert.equal(p.integrity,true);assert.equal(t4Rules.automatic_orders,undefined);assert.equal((await t4Ensure(e)).created_at,p.created_at);assert.throws(()=>e.sqlite.prepare("UPDATE t4_protocols SET payload='{}'").run(),/immutable/);for(const table of ['simulation_portfolios','capital_plans','parallel_cases','prod_forecasts','prod_episodes'])assert.equal(e.sqlite.prepare('SELECT COUNT(*) n FROM '+table).get().n,0)});
 test('Test 4 freezes pre-entry semantic selection and refuses stale or late registrations',()=>{const now='2026-11-18T12:00:00Z';const d=t4Decide(source,payload,now);assert.equal(d.eligible,true);assert.equal(d.selected,true);assert.ok(d.price_only_probability<d.reference_probability);assert.equal(t4Decide(source,payload,now,true).excluded_reason,'late_shadow_registration');assert.equal(t4Decide(source,{...payload,selection:{...payload.selection,citations:[]}},now).eligible,false);assert.equal(t4Decide(source,{...payload,features:{...payload.features,quote_source:'https://other.example/prices'}},now).eligible,false);assert.equal(t4Decide(source,{...payload,features:{...payload.features,quote_date:'2026-10-01'}},now).excluded_reason,'stale_decision_quote')});
 test('only FULL future close with SAME-day benchmark may open Test 4',()=>{const p=t4Decide(source,payload,'2026-11-18T12:00:00Z');
- const first=[row('AMD','2026-11-18',100,host,'2026-11-19T01:00:00Z'),row('SPY','2026-11-18',200,benchmark,'2026-11-19T01:00:00Z')];
- assert.equal(t4Assess(p,null,first,[],'2026-11-18T23:00:00Z').state,'waiting_entry');
- assert.equal(t4Assess(p,null,first.slice(0,1),[],'2026-11-19T11:00:00Z').state,'waiting_benchmark');
- const entered=t4Assess(p,null,first,[],'2026-11-19T11:00:00Z');assert.equal(entered.state,'entered');assert.equal(entered.entry.date,'2026-11-18');assert.equal(entered.entry.deadline,'2026-12-18');
- assert.equal(t4Assess(p,entered.entry,first,[],'2026-11-19T11:00:00Z').state,'open');
- assert.equal(t4Series(first,'AMD','wrong-provider','2026-11-19T11:00:00Z').length,0);
+ const first=[row('AMD','2026-11-19',100,host,'2026-11-20T01:00:00Z'),row('SPY','2026-11-19',200,benchmark,'2026-11-20T01:00:00Z')];
+ assert.equal(t4Assess(p,null,first,[],'2026-11-19T23:00:00Z').state,'waiting_entry');
+ assert.equal(t4Assess(p,null,first.slice(0,1),[],'2026-11-20T11:00:00Z').state,'waiting_benchmark');
+ const entered=t4Assess(p,null,first,[],'2026-11-20T11:00:00Z');assert.equal(entered.state,'entered');assert.equal(entered.entry.date,'2026-11-19');assert.equal(entered.entry.deadline,'2026-12-19');
+ assert.equal(t4Assess(p,entered.entry,first,[],'2026-11-20T11:00:00Z').state,'open');
+ assert.equal(t4Series(first,'AMD','wrong-provider','2026-11-20T11:00:00Z').length,0);
 });
 test('matured matched economic and market returns use identical dates and costs',()=>{const p=t4Decide(source,payload,'2026-11-18T12:00:00Z'),entry={date:'2026-11-18',asset_close:100,asset_source:host,benchmark_close:200,benchmark_source:benchmark,deadline:'2026-12-18'};
  const q=[row('AMD','2026-12-18',110),row('SPY','2026-12-18',204,benchmark)];
