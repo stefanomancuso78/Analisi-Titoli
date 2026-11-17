@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
-import {lrCycle,lrFit,lrFeatures,lrStatus,lrPolicy,lrEvaluationStats} from '../worker/learning-challenger.js';
+import {lrCycle,lrFit,lrFeatures,lrStatus,lrPolicy,lrEvaluationStats,lrTrainingQuality} from '../worker/learning-challenger.js';
 function fixture(){
  const db=new DatabaseSync(':memory:');
  for(const name of readdirSync('drizzle').filter(n=>n.endsWith('.sql')).sort())db.exec(readFileSync('drizzle/'+name,'utf8'));
@@ -73,7 +73,7 @@ test('evaluation outcomes never train shadow challenger and future outcomes are 
 
 test('a changed model version is detected before it can be used for prospective signals',async()=>{
  const e=fixture();
- for(let i=0;i<30;i++){const id='verify'+i,day='2026-09-0'+(1+i%3);addCase(e.db,id,day+'T09:00:00.000Z','training','SYM'+i%5);mature(e.db,id,'2026-10-15T12:00:00.000Z',i%2)}
+ for(let i=0;i<30;i++){const id='verify'+i,day='2026-09-0'+(1+i%3);addCase(e.db,id,day+'T09:00:00.000Z','training','SYM'+i%5,i%2?'high':'medium');mature(e.db,id,'2026-10-15T12:00:00.000Z',i%2)}
  const trained=await lrCycle(e,'2026-11-17T12:00:00.000Z');
  assert.equal(trained.trained,true);
  const item=e.db.prepare("SELECT key,value FROM prod_settings WHERE key LIKE 'lr:model:%' LIMIT 1").get(),bad=JSON.parse(item.value);
@@ -121,4 +121,13 @@ test('a forecast recorded on or after its alleged outcome cannot be scored',asyn
  assert.equal(status.matured_evaluations,0);
  assert.equal(status.evaluation.unpaired_or_unscorable,1);
  e.db.close();
+});
+
+test('shadow learning blocks one-sided outcomes, identical features and nonfinite evidence',()=>{
+ const rows=Array.from({length:35},(_,i)=>({symbol:'ISS'+i%5,cohort:'2026-11-'+String(1+i%4).padStart(2,'0'),y:i%2,features:lrFeatures(sample(i,i%2?'high':'medium'))}));
+ assert.equal(lrTrainingQuality(rows).eligible,true);
+ assert.equal(lrTrainingQuality(rows.map(x=>({...x,y:1}))).eligible,false);
+ assert.ok(lrTrainingQuality(rows.map(x=>({...x,y:1}))).reasons.includes('imbalanced_training_outcomes'));
+ assert.equal(lrFit(rows.map(x=>({...x,features:[1,0,0,0,0,0,0]}))),null);
+ assert.ok(lrTrainingQuality(rows.map((x,i)=>i===0?{...x,features:[1,0,NaN,0,0,0,0]}:x)).reasons.includes('invalid_training_features_or_labels'));
 });
