@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
-import {lrCycle,lrFit,lrFeatures,lrStatus,lrPolicy} from '../worker/learning-challenger.js';
+import {lrCycle,lrFit,lrFeatures,lrStatus,lrPolicy,lrEvaluationStats} from '../worker/learning-challenger.js';
 function fixture(){
  const db=new DatabaseSync(':memory:');
  for(const name of readdirSync('drizzle').filter(n=>n.endsWith('.sql')).sort())db.exec(readFileSync('drizzle/'+name,'utf8'));
@@ -84,5 +84,41 @@ test('a changed model version is detected before it can be used for prospective 
  const next=await lrCycle(e,'2026-11-18T12:01:00.000Z');
  assert.equal(next.state,'model_integrity_review');
  assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key='lr:prediction:new-case'").get().n,0);
+ e.db.close();
+});
+
+test('paired evaluation evidence is model-specific, cohort-diverse, and never an automatic validation',()=>{
+ const records=Array.from({length:30},(_,i)=>({model_id:'model-A',case_id:'case-'+i,cohort:'2026-11-'+String(1+(i%6)).padStart(2,'0'),symbol:'ISS-'+(i%5),brier:.10,reference_brier:.22}));
+ records.push(...Array.from({length:15},(_,i)=>({model_id:'model-B',cohort:'2026-11-'+String(1+(i%6)).padStart(2,'0'),symbol:'ISS-'+(i%5),brier:.03,reference_brier:.20})));
+ const first=lrEvaluationStats(records,'model-A'),second=lrEvaluationStats(records,'model-B');
+ assert.equal(first.paired_n,30);
+ assert.equal(first.cohorts,6);
+ assert.equal(first.issuers,5);
+ assert.equal(first.review_state,'requires_independent_review');
+ assert.ok(first.delta_brier>0);
+ assert.equal(first.validated,false);
+ assert.equal(first.automatic_promotion,false);
+ assert.equal(second.paired_n,15);
+ assert.equal(second.review_state,'insufficient_prospective_evidence');
+ assert.equal(lrEvaluationStats(records,'not-present').brier,null);
+});
+test('multiple predictions from only one cohort or issuer remain statistically insufficient',()=>{
+ const rows=Array.from({length:40},(_,i)=>({model_id:'single-cohort',cohort:'2026-11-17',symbol:'VWS.CO',brier:.02,reference_brier:.23}));
+ const res=lrEvaluationStats(rows,'single-cohort');
+ assert.equal(res.paired_n,40);
+ assert.equal(res.cohorts,1);
+ assert.equal(res.issuers,1);
+ assert.equal(res.preliminary_brier_improvement,false);
+ assert.equal(res.review_state,'insufficient_prospective_evidence');
+});
+test('a forecast recorded on or after its alleged outcome cannot be scored',async()=>{
+ const e=fixture();
+ const record={case_id:'late',symbol:'VRTX',fold:'evaluation',case_created_at:'2026-11-17T10:00:00.000Z',predicted_at:'2026-11-17T12:00:00.000Z',model_id:'economic-news-late',probability:.75,reference_probability:.60};
+ e.db.prepare('INSERT INTO parallel_cases VALUES (?,?,?,?,?,?)').run('late','VRTX',record.case_created_at,'evaluation','settled','{}');
+ mature(e.db,'late','2026-11-17T11:00:00.000Z',1);
+ e.db.prepare('INSERT INTO prod_settings (key,value) VALUES (?,?)').run('lr:prediction:late',JSON.stringify(record));
+ const status=await lrStatus(e);
+ assert.equal(status.matured_evaluations,0);
+ assert.equal(status.evaluation.unpaired_or_unscorable,1);
  e.db.close();
 });
