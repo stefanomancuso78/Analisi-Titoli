@@ -13,9 +13,10 @@ const targets=[
  {id:'fda',url:'https://api.fda.gov/drug/drugsfda.json?limit=10',format:'json',path:'results'},
  {id:'agg-nasdaq-nordic-news',url:'https://api.news.eu.nasdaq.com/news/rss/nasdaqNordicNews',format:'rss'},
  {id:'agg-businesswire-earnings',url:'https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeEF9YXA==',format:'rss'},
+ {id:'agg-globenewswire-alternative',url:'https://www.globenewswire.com/rss/list',format:'rss'},
  {id:'agg-globenewswire-public',url:'https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies',format:'rss'}
 ];
-const get=(x,path)=>path?.split('.').reduce((v,k)=>v?.[k],x)??x;
+const get=(x,path)=>path?path.split('.').reduce((v,k)=>v?.[k],x):x;
 const probe=async t=>{
  const started=Date.now();let status=null,contentType=null,records=0,freshness=null,classification='unverified',error=null;
  try{
@@ -23,7 +24,7 @@ const probe=async t=>{
  status=res.status;contentType=res.headers.get('content-type');
  if(!res.ok){classification=status===429?'rate_limited':status===403?'blocked_403':status===401?'requires_credentials':[404,410].includes(status)?'permanent_404_410':'http_error';}
  else {
- const raw=await res.text();if(raw.length>2_000_000)throw Error('Response exceeds 2MB');
+ const raw=await res.text();if(raw.length>8_000_000)throw Error('Response exceeds 8MB probe safety limit');
  if(t.format==='rss'){records=(raw.match(/<item[\s>]|<entry[\s>]/gi)||[]).length;classification=records?'reachable_items_unverified':'empty_or_parser_mismatch';}
  else{const data=JSON.parse(raw);const arr=get(data,t.path);records=Array.isArray(arr)?arr.length:arr&&typeof arr==='object'?Object.keys(arr).length:0;freshness=t.freshness?get(data,t.freshness):null;classification=records?'reachable_items_unverified':'empty_or_parser_mismatch';if(freshness&&Date.now()-Date.parse(freshness)>7*86400000)classification='stale_provider_dataset';}
  }
