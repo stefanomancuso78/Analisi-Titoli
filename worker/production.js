@@ -82,6 +82,20 @@ async function pdFetch(url,options={}){const u=new URL(url);if(u.protocol!=='htt
 export function pdSECFallbackSeed(symbol,master,alreadyCovered=[]){if(!/^[A-Z]{1,6}$/.test(symbol||'')||alreadyCovered.includes(symbol)||!Array.isArray(master))return null;const matches=master.filter(r=>r.ticker===symbol&&/^\d{1,10}$/.test(String(r.cik_str))&&Number(r.cik_str)>0);if(matches.length!==1)return null;const cik=String(matches[0].cik_str).padStart(10,'0');return{id:'sec-auto-'+symbol,name:symbol+' · SEC official filings backup',kind:'sec-company',primary:true,enabled:true,interval:86400,symbol,cik,url:'https://data.sec.gov/submissions/CIK'+cik+'.json',docs:'https://www.sec.gov/search-filings/edgar-application-programming-interfaces',coverage_scope:'SEC filed 8-K/10-Q/10-K/6-K only; does not substitute undisclosed issuer IR or media coverage'};}
 export function pdSourceDelayMs(status,error,failures=1){if(status==='credentials_required'||status==='rate_limited'||/\bHTTP (403|429)\b/.test(String(error)))return [24,72,168][Math.min(2,Math.max(0,Math.floor(failures)-1))]*3600000;return [1,4,12,24][Math.min(3,Math.max(0,Math.floor(failures)-1))]*3600000;}
 
+// Register newly shipped discovery channels before due-source selection.
+// Existing source payload, next_poll, retry status and backoff are immutable here.
+export async function pdEnsureSeeds(env){
+ const key='source_seed_catalog_signature',digest=await pdHash(pdSeeds.map(s=>JSON.stringify(s)).join('\n'));
+ const previous=await pdFirst(env,'SELECT value FROM prod_settings WHERE key=?',key);
+ if(previous?.value===digest)return {state:'unchanged',registered:0};
+ let registered=0;
+ for(const src of pdSeeds){
+  const result=await pdRun(env,"INSERT OR IGNORE INTO prod_sources (id,payload,next_poll) VALUES (?,?,?)",src.id,JSON.stringify(src),'');
+  registered+=result.meta?.changes??result.changes??0;
+ }
+ await pdRun(env,"INSERT INTO prod_settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",key,digest);
+ return {state:'registered',registered,note:'Only missing seed IDs inserted; existing source statuses, schedules and retry backoffs preserved'};
+}
 async function pdBootstrap(env,research){const now=pdNow(),statements=[];for(const src of pdSeeds)statements.push(env.DB.prepare(src.id==='market-europe-supplemental'?'INSERT INTO prod_sources (id,payload,next_poll) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload':'INSERT OR IGNORE INTO prod_sources (id,payload,next_poll) VALUES (?,?,?)').bind(src.id,JSON.stringify(src),''));
 for(const r of research.filter(x=>x.kind==='universe')){const name=r.summary.split(' — ')[0];statements.push(env.DB.prepare('INSERT OR IGNORE INTO prod_entities (symbol,name,sector,aliases,proof_url,created_at) VALUES (?,?,?,?,?,?)').bind(r.symbol,name,r.sector,JSON.stringify([pdNorm(name)]),r.sources[0],now));const url=r.sources[0];try{const host=new URL(url).hostname;if(!['api.nasdaq.com','example.com'].includes(host)){const src={id:'ir-'+r.symbol,name:name+' · Investor relations',kind:'company',primary:true,enabled:true,interval:86400,url,docs:url,symbol:r.symbol};statements.push(env.DB.prepare('INSERT OR IGNORE INTO prod_sources (id,payload,next_poll) VALUES (?,?,?)').bind(src.id,JSON.stringify(src),''))}}catch{}}
 for(const r of research.filter(x=>x.kind==='signal'&&x.verified&&imKnown[x.symbol])){const e=imKnown[r.symbol];statements.push(env.DB.prepare('INSERT OR IGNORE INTO prod_entities (symbol,name,sector,aliases,proof_url,created_at) VALUES (?,?,?,?,?,?)').bind(r.symbol,e.name,e.sector,JSON.stringify([pdNorm(e.name)]),e.proof_url,now));}
