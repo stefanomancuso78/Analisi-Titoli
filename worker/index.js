@@ -21,6 +21,7 @@ import {pdCredential} from './production.js';
 import {fnCycle,fnRegister,fnStatus,fnQueue,fnSaveExtract,fnAssertions} from './fundamentals.js';
 import {cpCycle,cpStatus,cpHistory,cpImport,cpUserPlan} from './capital.js';
 import {t4Cycle,t4Ensure,t4Status} from './test4.js';
+import {quoteSweepSymbols} from './quote-rotation.js';
 import {COMMERCE_HTML,COMMERCE_UI} from './commerce-ui.js';
 import {t3Cycle,t3Status,testGroupMean,testCurrentReturn,managerFeedback,managerFeedbackList} from './parallel.js';
 import {PRODUCT_HTML,PRODUCT_UI,PRODUCT_CSS} from './product-ui.js';
@@ -133,8 +134,8 @@ async function t4QuoteSweep(req,env){
   try{const outcome=await call('refresh_market_comparisons',{benchmark_symbol:symbol,limit:1},req,env);results.push({symbol,results:outcome.results||[],state:outcome.status})}
   catch(e){results.push({symbol,state:'failed',error:String(e.message).slice(0,180)})}
  }
- const rows=(await env.DB.prepare("SELECT DISTINCT c.symbol FROM t4_cases c LEFT JOIN t4_outcomes o ON o.case_id=c.id WHERE c.eligible=1 AND o.case_id IS NULL UNION SELECT 'AMD' AS symbol ORDER BY symbol LIMIT 4").all()).results||[];
- const symbols=rows.map(x=>x.symbol).filter(s=>/^[A-Z]{1,6}$/.test(s));
+ const rows=(await env.DB.prepare("SELECT DISTINCT c.symbol FROM t4_cases c LEFT JOIN t4_outcomes o ON o.case_id=c.id WHERE c.eligible=1 AND o.case_id IS NULL ORDER BY c.symbol").all()).results||[];
+ const symbols=quoteSweepSymbols(rows.map(x=>x.symbol),now,4);
  if(symbols.length){try{const outcome=await call('refresh_market_comparisons',{symbols},req,env);results.push({symbols,results:outcome.results||[],state:outcome.status})}catch(e){results.push({symbols,state:'failed',error:String(e.message).slice(0,180)})}}
  return {state:results.some(x=>x.state==='failed'||x.state==='partial')?'partial':'completed',at:now,results};
 }
