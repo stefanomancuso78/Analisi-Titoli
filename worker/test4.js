@@ -105,7 +105,7 @@ export async function t4Cycle(env,now=new Date().toISOString()){
  try{
   let enrolled=0,excluded=0,entered=0,settled=0,gaps=0,review=0;
   const quotes=await all(env,'SELECT * FROM market_closes ORDER BY recorded_at');
-  const cases=await all(env,"SELECT c.* FROM parallel_cases c LEFT JOIN t4_cases t ON t.source_case_id=c.id WHERE t.id IS NULL AND c.created_at>? ORDER BY c.created_at,id LIMIT 50",protocol.created_at);
+  const cases=await all(env,"SELECT c.* FROM parallel_cases c LEFT JOIN t4_cases t ON t.source_case_id=c.id WHERE t.id IS NULL AND c.created_at>? ORDER BY c.created_at,c.id LIMIT 50",protocol.created_at);
   for(const src of cases){
    const p=JSON.parse(src.payload),firstFutureCloseExists=quotes.some(q=>q.symbol===src.symbol&&q.trade_date>day(src.created_at)&&q.trade_date<day(now)&&q.recorded_at<=now);
    const decision=t4Decide(src,p,now,firstFutureCloseExists);
