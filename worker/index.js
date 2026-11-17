@@ -20,6 +20,7 @@ import {NEWS_HTML,NEWS_UI} from './news-ui.js';
 import {pdCredential} from './production.js';
 import {fnCycle,fnRegister,fnStatus,fnQueue,fnSaveExtract,fnAssertions} from './fundamentals.js';
 import {cpCycle,cpStatus,cpHistory,cpImport,cpUserPlan} from './capital.js';
+import {t4Cycle,t4Status} from './test4.js';
 import {COMMERCE_HTML,COMMERCE_UI} from './commerce-ui.js';
 import {t3Cycle,t3Status,testGroupMean,testCurrentReturn,managerFeedback,managerFeedbackList} from './parallel.js';
 import {PRODUCT_HTML,PRODUCT_UI,PRODUCT_CSS} from './product-ui.js';
@@ -149,6 +150,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.fundamentals)return {...await fnStatus(env,a.symbol||null),assertions:await fnAssertions(env,a.symbol||null)};
  if(name==='list_research'&&a.financial_queue)return fnQueue(env);
  if(name==='list_research'&&a.capital_status)return cpStatus(env,fxFor);
+ if(name==='list_research'&&a.test4_status)return t4Status(env);
  if(name==='list_research'&&a.market_readiness)return marketReadiness(env);
  if(name==='list_research'&&a.parallel_status)return parallelStatus(env);
  if(name==='list_research'&&a.intelligence_status)return iqStatus(env,a.symbol||null);
@@ -207,7 +209,8 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.observation_source)return fnRegister(env,a.observation_source);
  if(name==='refresh_pattern_calibration'&&a.capital_history_import)return cpImport(env,a.capital_history_import);
  if(name==='refresh_pattern_calibration'&&a.capital_cycle)return cpCycle(env,fxFor);
- if(name==='refresh_pattern_calibration'&&a.parallel_cycle)return t3Cycle(env);
+ if(name==='refresh_pattern_calibration'&&a.parallel_cycle){const parallel=await t3Cycle(env);return {...parallel,test4:await t4Cycle(env)};}
+ if(name==='refresh_pattern_calibration'&&a.test4_cycle)return t4Cycle(env);
  if(name==='refresh_pattern_calibration'&&a.intelligence_cycle)return {intelligence:await iqCycle(env),parallel:await t3Cycle(env)};
  if(name==='refresh_pattern_calibration'&&a.intelligence_delta_review)return iqDeltaReview(env,a.intelligence_delta_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.thesis_review)return iqReview(env,a.thesis_review,simPrincipal(req)||'authenticated-admin');
@@ -368,6 +371,7 @@ export default {async fetch(req,env){
  if(url.pathname==='/api/market-readiness'&&req.method==='GET')return json(await marketReadiness(env));
  if(url.pathname==='/api/fundamentals/source'){if(req.method!=='POST'||!owner(req,env))return json({error:'Operazione riservata'},403);if(req.headers.get('Origin')!==url.origin)return json({error:'Origine non consentita'},403);try{return json(await fnRegister(env,await req.json()),201)}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/parallel'&&req.method==='GET')return json(await parallelStatus(env));
+ if(url.pathname==='/api/test4'&&req.method==='GET')return json(await t4Status(env));
  if(url.pathname==='/api/manager-feedback'){const principal=simPrincipal(req)||'shared-reader';if(req.method==='GET')return json({admin:owner(req,env),items:await managerFeedbackList(env,principal,owner(req,env))});if(req.method!=='POST')return json({error:'Metodo non ammesso'},405);if(req.headers.get('Origin')!==url.origin)return json({error:'Origine non consentita'},403);try{return json(await managerFeedback(env,await req.json(),principal),201)}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/intelligence'&&req.method==='GET'){const symbol=url.searchParams.get('symbol');if(symbol&&!/^[A-Z0-9.\-]{1,30}$/.test(symbol))return json({error:'Simbolo non valido'},400);return json({...await iqStatus(env,symbol),can_edit:owner(req,env)})}
  if(url.pathname==='/api/skills-review'&&req.method==='GET')return json(VERIFIED_SKILLS_DATA);
