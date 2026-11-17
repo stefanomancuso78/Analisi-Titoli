@@ -37,3 +37,21 @@ test('long primary HTML reaches completed state with explicit readiness flag',as
  assert.equal(JSON.parse(e.sqlite.prepare("SELECT payload FROM graph_jobs WHERE id='full'").get().payload).semantic_ready,1);
  e.sqlite.close();
 });
+
+test('a previously stored short primary HTML cannot be reused to mark a later acquisition full-text complete',async()=>{
+ const e=fixture(),url='https://issuer.org/earnings';
+ job(e,'rescan',url,'Acme earnings disclosure');
+ e.sqlite.prepare('INSERT INTO graph_documents VALUES (?,?,?,?,?,?,?)').run(
+ 'cached-short',url,'cached-hash','Acme earnings',null,new Date().toISOString(),
+ JSON.stringify({issuer:'AAA',primary:true,extraction_basis:'document_text',text:'Brief issuer update. '.repeat(20)}));
+ let downloaded=0;
+ const r=await aqCycle(e,{...dep,fetchDocument:async source=>{
+  downloaded++;
+  return {url:source,text:'<article>'+('Verified current full financial statement. '.repeat(30))+'</article>'};
+ }});
+ assert.equal(downloaded,1);
+ assert.equal(r.processed[0].state,'completed');
+ assert.equal(r.processed[0].reused,undefined);
+ assert.equal(r.processed[0].semantic_ready,true);
+ e.sqlite.close();
+});
