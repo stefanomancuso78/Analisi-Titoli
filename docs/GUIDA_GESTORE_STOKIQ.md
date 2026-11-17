@@ -39,7 +39,7 @@ Se molte nomine ordinarie risultassero poco informative e certe revisioni di gui
 |---|---|---|
 | Test 1 | Riferimento originario, regole congelate e risultati storicizzati | Nessuna riscrittura con i metodi nuovi |
 | Test 2 | Prezzo + interpretazione economica contro controllo solo prezzo sugli stessi casi | Non prova da solo che il filtro batta il mercato |
-| Test 3 | Nuove versioni shadow da esiti maturati; minimo 20 esiti di training e due coorti | Zero versioni addestrate finché la soglia non è raggiunta; nessuna promozione automatica |
+| Test 3 | Nuove versioni shadow da esiti maturati; minimo 20 esiti di training e due coorti | Zero versioni addestrate finché la soglia non è raggiunta; nessuna promozione automatica |\n| Test 4 | Decisioni prospettiche selezionate, rendimento netto e confronto appaiato con SPY | Non convalidato finché non maturano campioni e coorti sufficienti; non modifica Test 1–3 |
 | Capitale v3.1 | HRP contro equiponderazione, tre profili, sei campioni USD 10.000 quando idonei | Campioni indipendenti; non un unico conto reale da USD 60.000 |
 | Memoria news | Ipotesi dirette/indirette e risultati a 1/5/20 giorni di calendario; training su esiti a 20 giorni, almeno 20 esiti su tre coorti | Gossip non diventa conferma; rendimento successivo non identifica causalità |
 | Monitor uscite | Performance, arretramento, tempo, calendario e invalidazione documentata; uscite shadow separate | Nessun ordine reale o modifica dei test congelati |
@@ -52,7 +52,7 @@ Una notizia stampa su Nvidia viene conservata anche se Nvidia non è in portafog
 
 ## Cosa legge il gestore
 
-- **Test 1 · 2 · 3:** schede uniformi. Il rendimento medio del gruppo è equiponderato per titolo, ultimo episodio per società, con numero di titoli valutabili; non è rendimento del portafoglio. Casi senza ingresso/prezzo sono esclusi, non messi a zero.
+- **Test 1, 2 e 3:** schede uniformi. La media del gruppo è equiponderata per titolo, ultimo episodio per società, con numero di titoli valutabili; non è rendimento del portafoglio. Casi senza ingresso/prezzo sono esclusi, non messi a zero.\n- **Test 4:** casi prospettici distinti con protocollo congelato, ingressi/esiti appaiati a SPY e costi convenzionali; l'assenza di esiti maturati non equivale a rendimento zero.
 - **Notizie e impatti:** archivio, priorità, evidenze, allerte, deviazioni finanziarie e apprendimento shadow.
 - **Bilanci e guidance:** confronti numerici, fonte, periodo e distinguo fra risultati e dichiarazioni previsionali.
 - **Osservatorio / Previsioni:** segnali documentali, candidati, previsioni e scheda del titolo con motivazioni ed evidenze.
@@ -71,7 +71,7 @@ L’accesso con password consente la consultazione; configurazioni, soglie, cred
 
 ## Come leggere i grafici degli andamenti
 
-- Le curve dei tre test registrano nel tempo la media mostrata nelle rispettive schede, conservando il numero di titoli misurabili di ciascun punto. Non ricostruiscono una storia precedente all’avvio della registrazione. L’ingresso di nuove società può cambiare la media anche senza un movimento di prezzo.
+- Le curve dei Test 1, 2 e 3 registrano nel tempo la media mostrata nelle rispettive schede, conservando il numero di titoli misurabili di ciascun punto. Test 4 ha una serie distinta sul rendimento netto medio dei casi selezionati appaiati a SPY, solo quando maturati: non confrontare direttamente le quattro curve. Non ricostruiscono una storia precedente all’avvio della registrazione. L’ingresso di nuove società può cambiare la media anche senza un movimento di prezzo.
 - La media dei segnali documentali ha una curva separata nell’Osservatorio. Non è rendimento di un conto o prova dell’efficacia predittiva.
 - Il grafico del portafoglio usa le valorizzazioni effettivamente registrate dal motore. Si può leggere come rendimento percentuale o capitale nella valuta scelta. I benchmark compaiono soltanto quando esistono dati confrontabili.
 - La scheda del titolo mostra le chiusure disponibili in valuta locale, da un provider coerente. Non equivale alla performance di un acquisto. Discontinuità importanti interrompono la linea per verifica.
