@@ -150,3 +150,23 @@ test('shadow activation is established before case creation and captures the fir
  assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:prediction:%'").get().n,2);
  e.db.close();
 });
+
+test('shadow monitor identifies cases missed by the ten-minute recording window, never scores them later',async()=>{
+ const e=fixture();
+ const active=await lrActivate(e,'2026-11-17T10:00:00.000Z');
+ assert.equal(active,'2026-11-17T10:00:00.000Z');
+ addCase(e.db,'missed','2026-11-17T10:01:00.000Z','evaluation','STM.PA');
+ addCase(e.db,'still-fresh','2026-11-17T11:56:00.000Z','evaluation','VWS.CO');
+ const at='2026-11-17T12:00:00.000Z';
+ const before=await lrStatus(e,at);
+ assert.equal(before.registration.cases_since_activation,2);
+ assert.equal(before.registration.overdue_missing,1);
+ assert.equal(before.registration.state,'missed_forecast_window');
+ const run=await lrCycle(e,at);
+ assert.equal(run.predictions_registered,1);
+ assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key='lr:prediction:missed'").get().n,0);
+ const after=await lrStatus(e,at);
+ assert.equal(after.registration.registered,1);
+ assert.equal(after.registration.overdue_missing,1);
+ e.db.close();
+});
