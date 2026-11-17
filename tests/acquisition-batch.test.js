@@ -55,3 +55,23 @@ test('a previously stored short primary HTML cannot be reused to mark a later ac
  assert.equal(r.processed[0].semantic_ready,true);
  e.sqlite.close();
 });
+
+test('legacy short-primary completions are visible to audit without reclassifying or deleting records',async()=>{
+ const e=fixture();
+ const cases=[['old-short','https://issuer.org/short','document_text',320],['old-full','https://issuer.org/full','document_text',1000],['old-abstract','https://issuer.org/abstract','indexed_scientific_abstract',200]];
+ for(const [id,url,basis,length] of cases){
+  job(e,id,url,'Acme verified report');
+  const docId='doc-'+id;
+  e.sqlite.prepare('INSERT INTO graph_documents VALUES (?,?,?,?,?,?,?)').run(docId,url,'hash-'+id,'Issuer document',null,new Date().toISOString(),JSON.stringify({issuer:'AAA',primary:true,extraction_basis:basis,text:'X'.repeat(length)}));
+  e.sqlite.prepare("UPDATE graph_jobs SET state='completed',payload=json_set(payload,'$.document_id',?) WHERE id=?").run(docId,id);
+ }
+ const before=e.sqlite.prepare("SELECT COUNT(*) n FROM graph_jobs WHERE state='completed'").get().n;
+ const audit=await aqAudit(e);
+ assert.equal(audit.historical_short_primary_completions.count,1);
+ assert.deepEqual(audit.historical_short_primary_completions.examples.map(x=>x.id),['old-short']);
+ assert.equal(audit.historical_short_primary_completions.examples[0].text_length,320);
+ assert.equal(audit.historical_short_primary_completions.needs_manual_source_review,true);
+ assert.equal(e.sqlite.prepare("SELECT COUNT(*) n FROM graph_jobs WHERE state='completed'").get().n,before);
+ assert.equal(e.sqlite.prepare("SELECT COUNT(*) n FROM graph_documents").get().n,3);
+ e.sqlite.close();
+});
