@@ -222,6 +222,7 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.exit_cycle)return {exit_monitor:await xmCycle(env)};
  if(name==='refresh_pattern_calibration'&&a.analyst_cycle)return {challenge:await evChallengeCycle(env,a.symbol||null)};
  if(name==='refresh_pattern_calibration'&&a.market_symbols)return call('refresh_market_comparisons',{symbols:a.market_symbols},req,env);
+ if(name==='refresh_pattern_calibration'&&a.market_benchmark)return call('refresh_market_comparisons',{benchmark_symbol:a.market_benchmark,limit:1},req,env);
  if(name==='refresh_pattern_calibration'&&a.retrospective_import)return rtImport(env,a.retrospective_import);
  if(name==='refresh_pattern_calibration'&&a.retrospective_cycle)return {retrospective:await rtCycle(env)};
  if(name==='refresh_pattern_calibration'&&a.search_study_cycle)return {search_study:await scCycle(env),status:await scStatus(env)};
