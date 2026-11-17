@@ -36,6 +36,7 @@ test('existing historic evidence may train, but no past predictions are backfill
  assert.equal(e.db.prepare('SELECT COUNT(*) n FROM parallel_cases').get().n,original);
  assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:model:%'").get().n,1);
  assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:prediction:%'").get().n,0);
+ assert.equal((await lrStatus(e)).models[0].integrity,true);
  const repeat=await lrCycle(e,'2026-11-17T12:01:00.000Z');
  assert.equal(repeat.trained,false);
  assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:model:%'").get().n,1);
@@ -67,5 +68,21 @@ test('evaluation outcomes never train shadow challenger and future outcomes are 
  assert.equal((await lrCycle(e,'2026-11-17T12:00:00.000Z')).training_n,0);
  assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:model:%'").get().n,0);
  assert.equal((await lrStatus(e)).models.length,0);
+ e.db.close();
+});
+
+test('a changed model version is detected before it can be used for prospective signals',async()=>{
+ const e=fixture();
+ for(let i=0;i<30;i++){const id='verify'+i,day='2026-09-0'+(1+i%3);addCase(e.db,id,day+'T09:00:00.000Z','training','SYM'+i%5);mature(e.db,id,'2026-10-15T12:00:00.000Z',i%2)}
+ const trained=await lrCycle(e,'2026-11-17T12:00:00.000Z');
+ assert.equal(trained.trained,true);
+ const item=e.db.prepare("SELECT key,value FROM prod_settings WHERE key LIKE 'lr:model:%' LIMIT 1").get(),bad=JSON.parse(item.value);
+ bad.weights[0]=2.99;
+ e.db.prepare('UPDATE prod_settings SET value=? WHERE key=?').run(JSON.stringify(bad),item.key);
+ assert.equal((await lrStatus(e)).models[0].integrity,false);
+ addCase(e.db,'new-case','2026-11-18T12:00:00.000Z','evaluation','VWS.CO');
+ const next=await lrCycle(e,'2026-11-18T12:01:00.000Z');
+ assert.equal(next.state,'model_integrity_review');
+ assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key='lr:prediction:new-case'").get().n,0);
  e.db.close();
 });
