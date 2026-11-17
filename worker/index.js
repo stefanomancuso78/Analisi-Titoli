@@ -24,6 +24,7 @@ import {t4Cycle,t4Ensure,t4Status} from './test4.js';
 import {quoteSweepSymbols} from './quote-rotation.js';
 import {COMMERCE_HTML,COMMERCE_UI} from './commerce-ui.js';
 import {t3Cycle,t3Status,testGroupMean,testCurrentReturn,managerFeedback,managerFeedbackList} from './parallel.js';
+import {lrCycle,lrStatus} from './learning-challenger.js';
 import {PRODUCT_HTML,PRODUCT_UI,PRODUCT_CSS} from './product-ui.js';
 import {iqCycle,iqStatus,iqReview,iqQueue,iqDeltaReview} from './intelligence.js';
 import {mtEnsure,mtCase,mtRun,mtReview,mtStatus} from './methods.js';
@@ -171,6 +172,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.test4_status)return t4Status(env);
  if(name==='list_research'&&a.market_readiness)return marketReadiness(env);
  if(name==='list_research'&&a.parallel_status)return parallelStatus(env);
+ if(name==='list_research'&&a.learning_status)return lrStatus(env);
  if(name==='list_research'&&a.intelligence_status)return iqStatus(env,a.symbol||null);
  if(name==='list_research'&&a.intelligence_queue)return iqQueue(env);
  if(name==='list_research'&&a.methods_status)return mtStatus(env,env.REQUEST_ROLE==='owner'&&a.unblind===true);
@@ -231,9 +233,9 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.observation_source)return fnRegister(env,a.observation_source);
  if(name==='refresh_pattern_calibration'&&a.capital_history_import)return cpImport(env,a.capital_history_import);
  if(name==='refresh_pattern_calibration'&&a.capital_cycle)return cpCycle(env,fxFor);
- if(name==='refresh_pattern_calibration'&&a.parallel_cycle){await t4Ensure(env);const parallel=await t3Cycle(env),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...parallel,test4,market};}
+ if(name==='refresh_pattern_calibration'&&a.parallel_cycle){await t4Ensure(env);const parallel=await t3Cycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...parallel,learning,test4,market};}
  if(name==='refresh_pattern_calibration'&&a.test4_cycle){const test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...test4,market};}
- if(name==='refresh_pattern_calibration'&&a.intelligence_cycle){await t4Ensure(env);const intelligence=await iqCycle(env),parallel=await t3Cycle(env),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {intelligence,parallel,test4,market};}
+ if(name==='refresh_pattern_calibration'&&a.intelligence_cycle){await t4Ensure(env);const intelligence=await iqCycle(env),parallel=await t3Cycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {intelligence,parallel,learning,test4,market};}
  if(name==='refresh_pattern_calibration'&&a.intelligence_delta_review)return iqDeltaReview(env,a.intelligence_delta_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.thesis_review)return iqReview(env,a.thesis_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.method_case)return mtCase(env,a.method_case);
