@@ -40,7 +40,8 @@ export async function rfPlan(env){
   }
  }
  proposals.sort((a,b)=>b.rank-a.rank||b.r.created_at.localeCompare(a.r.created_at)||a.r.id.localeCompare(b.r.id));
- let created=0,already=0;for(const {r,a,g} of proposals){
+ const oldIds=new Set(aged.map(r=>r.id)),reserve=Math.min(budget.remaining,Math.floor(budget.remaining*0.25)),oldCandidates=proposals.filter(p=>oldIds.has(p.r.id)),head=oldCandidates.slice(0,reserve),headKeys=new Set(head.map(p=>p.r.id+'|'+p.g.kind)),ordered=[...head,...proposals.filter(p=>!headKeys.has(p.r.id+'|'+p.g.kind))];
+ let created=0,already=0;for(const {r,a,g} of ordered){
   if(created>=budget.remaining)break;
   const id=await rfHash(rfRules.id+'|'+r.id+'|'+g.kind);
   if(await rfFirst(env,'SELECT id FROM research_jobs WHERE id=?',id)){already++;continue}
