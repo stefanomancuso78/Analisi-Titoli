@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
-import {lrCycle,lrFit,lrFeatures,lrStatus,lrPolicy,lrEvaluationStats,lrTrainingQuality} from '../worker/learning-challenger.js';
+import {lrActivate,lrCycle,lrFit,lrFeatures,lrStatus,lrPolicy,lrEvaluationStats,lrTrainingQuality} from '../worker/learning-challenger.js';
 function fixture(){
  const db=new DatabaseSync(':memory:');
  for(const name of readdirSync('drizzle').filter(n=>n.endsWith('.sql')).sort())db.exec(readFileSync('drizzle/'+name,'utf8'));
@@ -130,4 +130,56 @@ test('shadow learning blocks one-sided outcomes, identical features and nonfinit
  assert.ok(lrTrainingQuality(rows.map(x=>({...x,y:1}))).reasons.includes('imbalanced_training_outcomes'));
  assert.equal(lrFit(rows.map(x=>({...x,features:[1,0,0,0,0,0,0]}))),null);
  assert.ok(lrTrainingQuality(rows.map((x,i)=>i===0?{...x,features:[1,0,NaN,0,0,0,0]}:x)).reasons.includes('invalid_training_features_or_labels'));
+});
+
+test('shadow activation is established before case creation and captures the first study batch exactly once',async()=>{
+ const e=fixture();
+ const activation='2026-11-17T12:00:00.000Z';
+ assert.equal(await lrActivate(e,activation),activation);
+ assert.equal(await lrActivate(e,'2026-11-18T12:00:00.000Z'),activation);
+ addCase(e.db,'before-activation','2026-11-17T11:59:59.000Z','evaluation','PAST');
+ addCase(e.db,'activation-same-millisecond',activation,'evaluation','VWS.CO','high');
+ addCase(e.db,'first-fresh','2026-11-17T12:01:00.000Z','evaluation','SU.PA','high');
+ const first=await lrCycle(e,'2026-11-17T12:02:00.000Z');
+ assert.equal(first.predictions_registered,2);
+ assert.equal(first.untrained_baselines,2);
+ assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key='lr:prediction:before-activation'").get().n,0);
+ assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:prediction:%'").get().n,2);
+ const second=await lrCycle(e,'2026-11-17T12:03:00.000Z');
+ assert.equal(second.predictions_registered,0);
+ assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:prediction:%'").get().n,2);
+ e.db.close();
+});
+
+test('shadow monitor identifies cases missed by the ten-minute recording window, never scores them later',async()=>{
+ const e=fixture();
+ const active=await lrActivate(e,'2026-11-17T10:00:00.000Z');
+ assert.equal(active,'2026-11-17T10:00:00.000Z');
+ addCase(e.db,'missed','2026-11-17T10:01:00.000Z','evaluation','STM.PA');
+ addCase(e.db,'still-fresh','2026-11-17T11:56:00.000Z','evaluation','VWS.CO');
+ const at='2026-11-17T12:00:00.000Z';
+ const before=await lrStatus(e,at);
+ assert.equal(before.registration.cases_since_activation,2);
+ assert.equal(before.registration.overdue_missing,1);
+ assert.equal(before.registration.state,'missed_forecast_window');
+ const run=await lrCycle(e,at);
+ assert.equal(run.predictions_registered,1);
+ assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key='lr:prediction:missed'").get().n,0);
+ const after=await lrStatus(e,at);
+ assert.equal(after.registration.registered,1);
+ assert.equal(after.registration.overdue_missing,1);
+ e.db.close();
+});
+
+test('both operational routes activate shadow monitoring before generating new Test 3 cases',()=>{
+ const routes=readFileSync('worker/index.js','utf8');
+ for(const route of ['parallel_cycle','intelligence_cycle']){
+  const first=routes.indexOf("a."+route+"){");
+  assert.ok(first>0,'missing route '+route);
+  const fragment=routes.slice(first,first+440);
+  const activation=fragment.indexOf('await lrActivate(env)');
+  const create=fragment.indexOf('await t3Cycle(env)');
+  const capture=fragment.indexOf('await lrCycle(env)');
+  assert.ok(activation>=0&&create>activation&&capture>create,'shadow order regression in '+route);
+ }
 });

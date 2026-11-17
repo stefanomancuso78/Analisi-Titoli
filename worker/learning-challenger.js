@@ -27,16 +27,22 @@ export function lrFit(rows){
  }
  return w;
 }
+// Run once BEFORE a parallel-study pass that might create new cases.
+// Never backdate activation to resurrect old forecasts.
+export async function lrActivate(env,now=new Date().toISOString()){
+ if(!Number.isFinite(Date.parse(now)))throw Error('Invalid shadow activation timestamp');
+ const key='lr:activation:'+lrPolicy.id;
+ await env.DB.prepare('INSERT OR IGNORE INTO prod_settings VALUES (?,?)').bind(key,now).run();
+ return (await lrFirst(env,'SELECT value FROM prod_settings WHERE key=?',key)).value;
+}
 export async function lrCycle(env,now=new Date().toISOString()){
- const activationKey='lr:activation:'+lrPolicy.id;
- await env.DB.prepare('INSERT OR IGNORE INTO prod_settings VALUES (?,?)').bind(activationKey,now).run();
- const activation=(await lrFirst(env,'SELECT value FROM prod_settings WHERE key=?',activationKey)).value;
+ const activation=await lrActivate(env,now);
  const priorModels=await lrAll(env,"SELECT key,value FROM prod_settings WHERE key LIKE 'lr:model:%' ORDER BY json_extract(value,'$.trained_at') DESC LIMIT 1");
  const prior=priorModels.length?JSON.parse(priorModels[0].value):null;
  if(prior&&(!prior.integrity_hash||prior.integrity_hash!==await lrHash(JSON.stringify(Object.fromEntries(Object.entries(prior).filter(([k])=>k!=='integrity_hash'))))))return {state:'model_integrity_review',model_id:prior.id,notice:'Existing learner model changed or has no checksum; forecasting and training paused. Existing Test 1–4 untouched.'};
  // Score ONLY cases born after activation, before their first market outcome.
  // Use previously stored model, never a model trained later in this cycle.
- const cutoff=new Date(Date.parse(now)-10*60000).toISOString(),cases=await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.fold,c.payload FROM parallel_cases c WHERE c.created_at>? AND c.created_at>=? AND c.created_at<=? AND NOT EXISTS(SELECT 1 FROM parallel_outcomes o WHERE o.case_id=c.id) ORDER BY c.created_at,c.id LIMIT 300",activation,cutoff,now);
+ const cutoff=new Date(Date.parse(now)-10*60000).toISOString(),cases=await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.fold,c.payload FROM parallel_cases c WHERE c.created_at>=? AND c.created_at>=? AND c.created_at<=? AND NOT EXISTS(SELECT 1 FROM parallel_outcomes o WHERE o.case_id=c.id) ORDER BY c.created_at,c.id LIMIT 300",activation,cutoff,now);
  let predicted=0,untrained=0;
  for(const c of cases){
   const p=JSON.parse(c.payload),features=lrFeatures(p);
@@ -56,7 +62,7 @@ export async function lrCycle(env,now=new Date().toISOString()){
    trained=(insert.meta?.changes??insert.changes)===1;modelId=id;
   }
  }
- return {state:'completed',activation,training_n:training.length,training_quality:lrTrainingQuality(training),trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,notice:'Only cases first recorded after activation and within ten minutes; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
+ return {state:'completed',activation,training_n:training.length,training_quality:lrTrainingQuality(training),trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,notice:'Only cases first recorded at or after pre-registered activation and within ten minutes; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
 }
 // Paired, strictly prospective challenger/reference scoring. Never merge
 // different model versions into a single claim of predictive improvement.
@@ -68,12 +74,15 @@ export function lrEvaluationStats(records,modelId){
  const samplesReady=n>=lrPolicy.minimum_trained_evaluation&&cohorts>=5&&issuers>=5;
  return {model_id:modelId,paired_n:n,cohorts,issuers,brier,reference_brier,delta_brier,preliminary_brier_improvement:samplesReady&&delta_brier>0,review_state:!samplesReady?'insufficient_prospective_evidence':delta_brier<=0?'no_brier_improvement':'requires_independent_review',validated:false,automatic_promotion:false,comparison_basis:'Matched evaluation-fold cases for this exact model version only; positive delta means lower challenger Brier; no statistical significance, net alpha or investibility claim'};
 }
-export async function lrStatus(env){
+export async function lrStatus(env,now=new Date().toISOString()){
  const activation=await lrFirst(env,'SELECT value FROM prod_settings WHERE key=?','lr:activation:'+lrPolicy.id);
+ const overdueBefore=new Date(Date.parse(now)-10*60000).toISOString();
+ const cov=activation?.value?await lrFirst(env,"SELECT COUNT(*) total,SUM(CASE WHEN p.key IS NOT NULL THEN 1 ELSE 0 END) registered,SUM(CASE WHEN p.key IS NULL AND c.created_at<? THEN 1 ELSE 0 END) overdue FROM parallel_cases c LEFT JOIN prod_settings p ON p.key='lr:prediction:'||c.id WHERE c.created_at>=? AND c.created_at<=?",overdueBefore,activation.value,now):null;
+ const registration={state:!activation?'not_activated':(cov?.overdue||0)>0?'missed_forecast_window':'observing',cases_since_activation:cov?.total||0,registered:cov?.registered||0,overdue_missing:cov?.overdue||0,window_minutes:10,notice:'Only registered predictions count. Cases older than ten minutes without a saved prediction cannot be retrospectively scored; investigate the cycle schedule instead of backfilling.'};
  const models=await lrAll(env,"SELECT value FROM prod_settings WHERE key LIKE 'lr:model:%' ORDER BY json_extract(value,'$.trained_at') DESC LIMIT 12");
  const saved=await lrAll(env,"SELECT s.value,o.payload outcome,o.created_at outcome_at FROM prod_settings s LEFT JOIN parallel_outcomes o ON o.case_id=json_extract(s.value,'$.case_id') WHERE s.key LIKE 'lr:prediction:%' ORDER BY json_extract(s.value,'$.predicted_at') DESC LIMIT 1000");
  const predictions=saved.map(r=>JSON.parse(r.value)),results=[];
  for(let i=0;i<predictions.length;i++){const p=predictions[i],o=saved[i].outcome,at=saved[i].outcome_at;if(p.fold!=='evaluation'||p.probability==null||!o||!at||!(Date.parse(p.case_created_at)<=Date.parse(p.predicted_at)&&Date.parse(p.predicted_at)<Date.parse(at)))continue;const y=JSON.parse(o).y;if((y===0||y===1)&&Number.isFinite(p.probability)&&p.probability>=0&&p.probability<=1)results.push({case_id:p.case_id,model_id:p.model_id,cohort:p.case_created_at.slice(0,10),symbol:p.symbol,brier:(p.probability-y)**2,reference_brier:Number.isFinite(p.reference_probability)?(p.reference_probability-y)**2:null})}
  const checked=[];for(const r of models){const model=JSON.parse(r.value),base=Object.fromEntries(Object.entries(model).filter(([k])=>k!=='integrity_hash'));checked.push({...model,integrity:!!model.integrity_hash&&model.integrity_hash===await lrHash(JSON.stringify(base))});}
- const by_model=checked.map(m=>lrEvaluationStats(results,m.id)),latest=by_model[0]||null;return {policy:lrPolicy,activation:activation?.value||null,models:checked,predictions_registered:predictions.length,trained_predictions:predictions.filter(p=>p.probability!=null).length,matured_evaluations:results.length,trained_brier:latest?.brier??null,reference_brier:latest?.reference_brier??null,evaluation:{latest_model:latest,by_model,unpaired_or_unscorable:predictions.filter(p=>p.fold==='evaluation'&&p.probability!=null).length-results.length,history_window_limited:saved.length===1000},validated:false,automatic_promotion:false,notice:'Only matched post-forecast outcomes, grouped by exact challenger model version. Independent review, transaction-cost alpha, drift tests and sustained out-of-sample replication remain required.'};
+ const by_model=checked.map(m=>lrEvaluationStats(results,m.id)),latest=by_model[0]||null;return {policy:lrPolicy,activation:activation?.value||null,registration,models:checked,predictions_registered:predictions.length,trained_predictions:predictions.filter(p=>p.probability!=null).length,matured_evaluations:results.length,trained_brier:latest?.brier??null,reference_brier:latest?.reference_brier??null,evaluation:{latest_model:latest,by_model,unpaired_or_unscorable:predictions.filter(p=>p.fold==='evaluation'&&p.probability!=null).length-results.length,history_window_limited:saved.length===1000},validated:false,automatic_promotion:false,notice:'Only matched post-forecast outcomes, grouped by exact challenger model version. Independent review, transaction-cost alpha, drift tests and sustained out-of-sample replication remain required.'};
 }
