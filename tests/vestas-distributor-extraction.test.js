@@ -15,7 +15,8 @@ test('Inderes issuer-distribution releases include only Vestas-titled disclosure
  const base='https://www.inderes.dk/en/companies/Vestas-Wind-Systems';
  const html='<html><body>'+Array.from({length:6},(_,i)=>'<a href="/en/releases/analyst-report-'+i+'">Independent analyst commentary '+i+'</a>').join('')+
  '<a href="/en/releases/vestas-interim-report-q3-2026">Vestas – Interim Report, Third Quarter 2026</a>'+
- '<a href="/en/releases/vestas-order-intake">Vestas Wind Systems A/S: Vestas receives a new order</a>'+\n '<a href="/en/releases/transactions-in-connection-with-share-buy-back-programme">Transactions in connection with share buy-back programme 30 July - 5 August 2026</a>'+ 
+ '<a href="/en/releases/vestas-order-intake">Vestas Wind Systems A/S: Vestas receives a new order</a>'+ 
+ '<a href="/en/releases/transactions-in-connection-with-share-buy-back-programme">Transactions in connection with share buy-back programme 30 July - 5 August 2026</a>'+ 
  '<a href="https://evil.example/en/releases/vestas-rumor">Vestas fake release</a></body></html>';
  let attempts=0;
  globalThis.fetch=async()=>{attempts++;return new Response(html,{status:200,headers:{'Content-Type':'text/html'}})};
