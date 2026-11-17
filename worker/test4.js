@@ -2,8 +2,8 @@
 // Does not mutate Tests 1–3, capital plans, training models, or historical records.
 import {exActionValue,exSplitSuspect} from './experiment.js';
 import {pdPredict} from './production.js';
-const t4All=async(env,sql,...p)=>(await env.DB.prepare(sql).bind(...p).t4All()).results||[];
-const t4First=async(env,sql,...p)=>env.DB.prepare(sql).bind(...p).t4First();
+const t4All=async(env,sql,...p)=>(await env.DB.prepare(sql).bind(...p).all()).results||[];
+const t4First=async(env,sql,...p)=>env.DB.prepare(sql).bind(...p).first();
 const t4Hash=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))].map(c=>c.toString(16).padStart(2,'0')).join('');
 const t4Day=s=>s.slice(0,10);
 const t4Later=(d,n)=>new Date(Date.parse(d+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
@@ -133,7 +133,7 @@ export function t4Metrics(cases){
   paired=matured.filter(c=>c.p.selected),gaps=eligible.filter(c=>c.outcome?.kind==='data_gap'),
   alphas=paired.map(c=>c.outcome.alpha),cohorts=new Map();
  for(const c of paired){const arr=cohorts.get(c.p.cohort)||[];arr.push(c.outcome.alpha);cohorts.set(c.p.cohort,arr)}
- const cohortMeans=[...cohorts.values()].map(avg),meanCohort=t4Avg(cohortMeans);
+ const cohortMeans=[...cohorts.values()].map(t4Avg),meanCohort=t4Avg(cohortMeans);
  const variance=cohortMeans.length>=2?cohortMeans.reduce((s,x)=>s+(x-meanCohort)**2,0)/(cohortMeans.length-1):null;
  const lower=variance===null?null:meanCohort-1.96*Math.sqrt(variance/cohortMeans.length);
  const brier=x=>t4Avg(matured.map(c=>(c.p[x]-c.outcome.y)**2));
