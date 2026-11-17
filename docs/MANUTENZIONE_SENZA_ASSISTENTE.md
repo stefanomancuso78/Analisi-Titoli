@@ -42,13 +42,17 @@ Comandi disponibili:
 
 ```js
 await StokIQMaintenance.status()          // stato operativo
-await StokIQMaintenance.tests()           // tre test e motivi delle esclusioni
+await StokIQMaintenance.tests()           // Test 1–3 e Test 4 distinti, in sola lettura
 await StokIQMaintenance.downloadStatus()  // salva il report JSON sul proprio dispositivo
 await StokIQMaintenance.sourceRefresh()   // una fonte dovuta, con rotazione equa
 await StokIQMaintenance.performance()     // calcolo/registrazione delle performance
+await StokIQMaintenance.portfolioStep()    // una valorizzazione dalla rotazione esistente
+await StokIQMaintenance.portfolioBatch()   // massimo tre valorizzazioni in sequenza
 await StokIQMaintenance.operations()      // controlli operativi
 await StokIQMaintenance.backupStep()      // un avanzamento del backup, se dovuto
 ```
+
+La valorizzazione dei portafogli è distinta dall'acquisizione delle quotazioni. Un risultato `completed` significa che è stato eseguito il calcolo con i dati già acquisiti, non che siano arrivati nuovi prezzi. La rotazione completa deve essere eseguita con budget e frequenza sostenibili; evitare richieste parallele. Il pannello del gestore distingue ora i testi in attesa di lettura dagli approfondimenti economici ancora da completare, e segnala anche le valorizzazioni non recenti.
 
 I comandi di scrittura richiedono l'autenticazione proprietario del sito: la password condivisa o un profilo con sola visualizzazione admin non bastano. Il server continua a verificare ruolo e origine. Un HTTP 403 indica permessi insufficienti: non aggirarlo modificando header o ruoli. Un timeout non prova che il lavoro sia annullato: rileggere lo stato prima di ripetere.
 
