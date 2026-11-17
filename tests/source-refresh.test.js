@@ -10,3 +10,6 @@ test('source polling defers at queue limits without changing queue state',()=>{f
 
 import {shAssess} from '../worker/source-health.js';
 test('issuer identity and financial facts do not impersonate a live issuer IR feed',()=>{const sources=[{id:'financial:issuer',config:{symbol:'ACME',kind:'issuer-index',enabled:true,interval:86400},last_status:'ok',last_poll:now},{id:'financial:facts',config:{symbol:'ACME',kind:'sec-facts',enabled:true,interval:86400},last_status:'ok',last_poll:now}];const result=shAssess([{symbol:'ACME',name:'Acme'}],sources,[],[],now);assert.equal(result.counts.primary_discovery_gaps,1);assert.equal(result.stocks[0].ir.state,'not_configured');assert.equal(result.stocks[0].financials.state,'available')});
+
+import {readFileSync} from 'node:fs';
+test('new SEC fallback identifiers agree with verified archived issuer catalog',()=>{const catalog=JSON.parse(readFileSync('research/sec-issuer-catalog.json','utf8')),production=readFileSync('worker/production.js','utf8');for(const symbol of ['CSCO','GILD','LEU','STM']){const entry=catalog.find(e=>e.symbol===symbol);assert.ok(entry,`No verified issuer for ${symbol}`);assert.ok(production.includes(`id:'sec-fallback-${symbol}'`));assert.ok(production.includes(`cik:'${entry.cik}'`));assert.ok(production.includes(entry.source))}});
