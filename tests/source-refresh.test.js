@@ -13,3 +13,5 @@ test('issuer identity and financial facts do not impersonate a live issuer IR fe
 
 import {readFileSync} from 'node:fs';
 test('new SEC fallback identifiers agree with verified archived issuer catalog',()=>{const catalog=JSON.parse(readFileSync('research/sec-issuer-catalog.json','utf8')),production=readFileSync('worker/production.js','utf8');for(const symbol of ['CSCO','GILD','LEU','STM']){const entry=catalog.find(e=>e.symbol===symbol);assert.ok(entry,`No verified issuer for ${symbol}`);assert.ok(production.includes(`id:'sec-fallback-${symbol}'`));assert.ok(production.includes(`cik:'${entry.cik}'`));assert.ok(production.includes(entry.source))}});
+
+test('Mastercard SEC fallback uses verified issuer identity and submission URL',()=>{const source=readFileSync('worker/production.js','utf8');assert.match(source,/id:'sec-fallback-MA'[^\n]*symbol:'MA',cik:'0001141391'[^\n]*data\.sec\.gov\/submissions\/CIK0001141391\.json/)});
