@@ -27,16 +27,22 @@ export function lrFit(rows){
  }
  return w;
 }
+// Run once BEFORE a parallel-study pass that might create new cases.
+// Never backdate activation to resurrect old forecasts.
+export async function lrActivate(env,now=new Date().toISOString()){
+ if(!Number.isFinite(Date.parse(now)))throw Error('Invalid shadow activation timestamp');
+ const key='lr:activation:'+lrPolicy.id;
+ await env.DB.prepare('INSERT OR IGNORE INTO prod_settings VALUES (?,?)').bind(key,now).run();
+ return (await lrFirst(env,'SELECT value FROM prod_settings WHERE key=?',key)).value;
+}
 export async function lrCycle(env,now=new Date().toISOString()){
- const activationKey='lr:activation:'+lrPolicy.id;
- await env.DB.prepare('INSERT OR IGNORE INTO prod_settings VALUES (?,?)').bind(activationKey,now).run();
- const activation=(await lrFirst(env,'SELECT value FROM prod_settings WHERE key=?',activationKey)).value;
+ const activation=await lrActivate(env,now);
  const priorModels=await lrAll(env,"SELECT key,value FROM prod_settings WHERE key LIKE 'lr:model:%' ORDER BY json_extract(value,'$.trained_at') DESC LIMIT 1");
  const prior=priorModels.length?JSON.parse(priorModels[0].value):null;
  if(prior&&(!prior.integrity_hash||prior.integrity_hash!==await lrHash(JSON.stringify(Object.fromEntries(Object.entries(prior).filter(([k])=>k!=='integrity_hash'))))))return {state:'model_integrity_review',model_id:prior.id,notice:'Existing learner model changed or has no checksum; forecasting and training paused. Existing Test 1–4 untouched.'};
  // Score ONLY cases born after activation, before their first market outcome.
  // Use previously stored model, never a model trained later in this cycle.
- const cutoff=new Date(Date.parse(now)-10*60000).toISOString(),cases=await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.fold,c.payload FROM parallel_cases c WHERE c.created_at>? AND c.created_at>=? AND c.created_at<=? AND NOT EXISTS(SELECT 1 FROM parallel_outcomes o WHERE o.case_id=c.id) ORDER BY c.created_at,c.id LIMIT 300",activation,cutoff,now);
+ const cutoff=new Date(Date.parse(now)-10*60000).toISOString(),cases=await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.fold,c.payload FROM parallel_cases c WHERE c.created_at>=? AND c.created_at>=? AND c.created_at<=? AND NOT EXISTS(SELECT 1 FROM parallel_outcomes o WHERE o.case_id=c.id) ORDER BY c.created_at,c.id LIMIT 300",activation,cutoff,now);
  let predicted=0,untrained=0;
  for(const c of cases){
   const p=JSON.parse(c.payload),features=lrFeatures(p);
@@ -56,7 +62,7 @@ export async function lrCycle(env,now=new Date().toISOString()){
    trained=(insert.meta?.changes??insert.changes)===1;modelId=id;
   }
  }
- return {state:'completed',activation,training_n:training.length,training_quality:lrTrainingQuality(training),trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,notice:'Only cases first recorded after activation and within ten minutes; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
+ return {state:'completed',activation,training_n:training.length,training_quality:lrTrainingQuality(training),trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,notice:'Only cases first recorded at or after pre-registered activation and within ten minutes; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
 }
 // Paired, strictly prospective challenger/reference scoring. Never merge
 // different model versions into a single claim of predictive improvement.
