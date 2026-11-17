@@ -7,3 +7,6 @@ test('empty discovery slot falls back to due primary work without forcing a futu
 
 import {flBackpressure} from '../worker/flow-health.js';
 test('source polling defers at queue limits without changing queue state',()=>{for(const [a,r,u] of [[30,0,0],[0,12,0],[0,0,20]])assert.equal(flBackpressure({acquisition:{pending:a,untriaged:u},reading:{pending:r}}).deferred,true);assert.equal(flBackpressure({acquisition:{pending:29,untriaged:19},reading:{pending:11}}).deferred,false);assert.equal(flBackpressure({acquisition:{pending:0},reading:{pending:0}}).deferred,false)});
+
+import {shAssess} from '../worker/source-health.js';
+test('issuer identity and financial facts do not impersonate a live issuer IR feed',()=>{const sources=[{id:'financial:issuer',config:{symbol:'ACME',kind:'issuer-index',enabled:true,interval:86400},last_status:'ok',last_poll:now},{id:'financial:facts',config:{symbol:'ACME',kind:'sec-facts',enabled:true,interval:86400},last_status:'ok',last_poll:now}];const result=shAssess([{symbol:'ACME',name:'Acme'}],sources,[],[],now);assert.equal(result.counts.primary_discovery_gaps,1);assert.equal(result.stocks[0].ir.state,'not_configured');assert.equal(result.stocks[0].financials.state,'available')});
