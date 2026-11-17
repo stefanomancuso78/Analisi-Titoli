@@ -22,6 +22,11 @@ test('manager panel separates ready semantic queue from pending research evidenc
  assert.equal(r.queue.pending,0);
  assert.equal(r.research_followups.pending,1);
  assert.equal(r.research_followups.evidence_ready,1);
+ assert.equal(r.research_workload.active,1);
+ assert.equal(r.research_workload.minimum_fetch_cycles_without_arrivals,1);
+ assert.equal(r.research_workload.assumed_max_jobs_per_cycle,2);
+ assert.ok(r.research_workload.notice.includes('not independently measured processing speed'));
+ assert.equal(r.research_workload.new_requests_last_24h,0);
  assert.equal(r.portfolio_health.active,1);
  assert.equal(r.portfolio_health.stale,1);
  assert.equal(r.portfolio_health.never_valued,0);
