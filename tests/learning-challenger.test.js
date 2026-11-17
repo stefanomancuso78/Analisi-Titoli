@@ -183,3 +183,22 @@ test('both operational routes activate shadow monitoring before generating new T
   assert.ok(activation>=0&&create>activation&&capture>create,'shadow order regression in '+route);
  }
 });
+
+test('evaluation metrics include matured prospective outcomes older than last 1000 forecasts',async()=>{
+ const e=fixture(),first='2026-11-01T10:00:00.000Z',after='2026-12-05T10:00:00.000Z';
+ // Older matured evaluation must not disappear merely because newer records exist.
+ const old={case_id:'earliest-matured',symbol:'VWS.CO',fold:'evaluation',case_created_at:first,predicted_at:'2026-11-01T10:01:00.000Z',model_id:'challenger-old',probability:.8,reference_probability:.6};
+ e.db.prepare('INSERT INTO parallel_cases VALUES (?,?,?,?,?,?)').run(old.case_id,old.symbol,old.case_created_at,'evaluation','settled','{}');
+ mature(e.db,old.case_id,'2026-12-01T12:00:00.000Z',1);
+ e.db.prepare('INSERT INTO prod_settings VALUES (?,?)').run('lr:prediction:'+old.case_id,JSON.stringify(old));
+ const insert=e.db.prepare('INSERT INTO prod_settings VALUES (?,?)');
+ for(let i=0;i<1005;i++)insert.run('lr:prediction:new-'+i,JSON.stringify({case_id:'new-'+i,fold:'evaluation',model_id:'untrained-baseline',case_created_at:after,predicted_at:'2026-12-05T10:01:00.000Z',symbol:'ISS'+i,probability:null}));
+ const result=await lrStatus(e,'2026-12-06T12:00:00.000Z');
+ assert.equal(result.predictions_registered,1006);
+ assert.equal(result.trained_predictions,1);
+ assert.equal(result.matured_evaluations,1);
+ assert.equal(result.evaluation.scanned_matured_evaluations,1);
+ assert.equal(result.evaluation.history_window_limited,false);
+ assert.equal(result.evaluation.unpaired_or_unscorable,0);
+ e.db.close();
+});
