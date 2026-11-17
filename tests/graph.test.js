@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import {readdirSync,readFileSync} from 'node:fs';
-import {gDocument,gExtract,gLinks,gSafeURL,gEnqueue,gSave,gStatus,gCycle,gSECEvents,gFeedIssuer} from '../worker/graph.js';
+import {gDocument,gExtract,gLinks,gSafeURL,gEnqueue,gSave,gStatus,gCycle,gSECEvents,gFeedIssuer,gAggregatorEvents} from '../worker/graph.js';
 function graphDB(){const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON');for(const f of readdirSync('drizzle').filter(x=>x.endsWith('.sql')).sort())sqlite.exec(readFileSync('drizzle/'+f,'utf8'));const DB={prepare(sql){let values=[];return {bind(...v){values=v;return this},async all(){return {results:sqlite.prepare(sql).all(...values)}},async first(){return sqlite.prepare(sql).get(...values)||null},async run(){return sqlite.prepare(sql).run(...values)}}},async batch(rows){sqlite.exec('BEGIN');try{for(const r of rows)await r.run();sqlite.exec('COMMIT')}catch(e){sqlite.exec('ROLLBACK');throw e}}};return {DB,sqlite}}
 const entities=[{symbol:'PLTR',name:'Palantir Technologies',aliases:['Palantir'],proof_url:'https://www.sec.gov/edgar/browse/?CIK=1321655'},{symbol:'NVDA',name:'NVIDIA Corporation',aliases:['NVIDIA'],proof_url:'https://www.sec.gov/edgar/browse/?CIK=1045810'}];
 const sample='Palantir and NVIDIA announced a collaboration to build software for enterprise customers. The companies disclosed deployment details and the scope of their technical agreement. Financial effects remain unquantified.';
@@ -32,4 +32,15 @@ test('wire-title discovery accepts only unique company names or vetted longer al
  assert.equal(gFeedIssuer('Mastercard and Schneider Electric announce joint venture',companies),null);
  assert.equal(gFeedIssuer('Electric demand soars',companies),null);
  assert.equal(gFeedIssuer('Vestas announces',[{symbol:'VWS.CO',name:'Vestas Wind Systems A/S',aliases:[]}]),null);
+});
+
+test('Business Wire fallback accepts only exact unique issuer announcements from verified host and does not promote secondary RSS into primary research',async()=>{
+ const e=graphDB(),previous=globalThis.fetch,day=new Date().toUTCString();
+ await e.DB.prepare('INSERT INTO prod_entities VALUES (?,?,?,?,?,?)').bind('PLTR','Palantir Technologies','AI','["Palantir Technologies"]','https://www.sec.gov/edgar/browse/?CIK=1321655',new Date().toISOString()).run();
+ const xml='<?xml version="1.0"?><rss version="2.0"><channel><item><title>Palantir Technologies Reports Earnings Results</title><link>https://www.businesswire.com/news/home/20261117000001/en/Palantir-Results</link><pubDate>'+day+'</pubDate></item><item><title>Palantir Technologies announces new contract</title><link>https://untrusted.example/news/foreign</link><pubDate>'+day+'</pubDate></item><item><title>Other Company Reports Earnings Results</title><link>https://www.businesswire.com/news/home/20261117000002/en/Other</link><pubDate>'+day+'</pubDate></item></channel></rss>';
+ globalThis.fetch=async url=>{assert.equal(new URL(url).hostname,'feed.businesswire.com');return new Response(xml,{headers:{'Content-Type':'application/rss+xml'}})};
+ try{const source={id:'agg-businesswire-earnings',kind:'aggregator-rss',provider:'businesswire',symbol:null,primary:false,url:'https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeEF9YXA=='};const out=await gAggregatorEvents(e,source);assert.equal(out.length,1);assert.equal(out[0].symbol,'PLTR');assert.equal(out[0].primary,false);
+ const jobs=e.sqlite.prepare('SELECT * FROM graph_jobs').all();assert.equal(jobs.length,1);assert.equal(JSON.parse(jobs[0].payload).primary,false);
+ await assert.rejects(()=>gAggregatorEvents(e,{...source,url:'https://fake.example/rss'}),/Unapproved feed host/);
+ }finally{globalThis.fetch=previous;e.sqlite.close();}
 });
