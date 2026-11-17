@@ -17,3 +17,26 @@ test('new SEC fallback identifiers agree with verified archived issuer catalog',
 test('Mastercard SEC fallback uses verified issuer identity and submission URL',()=>{const source=readFileSync('worker/production.js','utf8');assert.match(source,/id:'sec-fallback-MA'[^\n]*symbol:'MA',cik:'0001141391'[^\n]*data\.sec\.gov\/submissions\/CIK0001141391\.json/)});
 
 test('European issuer fallbacks are official, symbol-scoped and never silently count as already polled',()=>{const src=readFileSync('worker/production.js','utf8');for(const [symbol,id,host] of [['ENR.DE','ir-alt-ENR.DE-press','www.siemens-energy.com'],['ENR.DE','ir-alt-ENR.DE-investor','www.siemens-energy.com'],['VWS.CO','ir-alt-VWS.CO-vestas','www.vestas.com'],['SU.PA','ir-alt-SU.PA-schneider','www.se.com']]){const line=src.split('\n').find(x=>x.includes("id:'"+id+"'"));assert.ok(line,id);assert.ok(line.includes("symbol:'"+symbol+"'"),id);assert.ok(line.includes(host),id);assert.ok(line.includes("discovery_paths:"),id);assert.ok(line.includes("enabled:true"),id);assert.ok(line.includes("coverage_scope:"),id)}});
+
+
+import {pdSECFallbackSeed,pdSourceDelayMs,pdCycle} from '../worker/production.js';
+test('SEC discovery creates an official issuer-matched backup only for unique verified ticker-CIK pairs',()=>{
+ const master=[{ticker:'ACME',title:'Acme Corporation',cik_str:12345},{ticker:'ACME2',title:'Another Company',cik_str:4}],fallback=pdSECFallbackSeed('ACME',master);
+ assert.equal(fallback.id,'sec-auto-ACME');assert.equal(fallback.url,'https://data.sec.gov/submissions/CIK0000012345.json');assert.equal(fallback.kind,'sec-company');assert.equal(fallback.primary,true);assert.match(fallback.coverage_scope,/does not substitute/);
+ assert.equal(pdSECFallbackSeed('ACME',master,['ACME']),null);assert.equal(pdSECFallbackSeed('ACME2',master),null);assert.equal(pdSECFallbackSeed('MA',[{ticker:'MA',cik_str:1},{ticker:'MA',cik_str:2}]),null);assert.equal(pdSECFallbackSeed('NOSEC',master),null);
+});
+test('source retry delay backs off temporary errors and does not retry denied or rate-limited hosts rapidly',()=>{
+ assert.equal(pdSourceDelayMs('error','HTTP 503',1),3600000);assert.equal(pdSourceDelayMs('error','HTTP 503',2),14400000);
+ assert.equal(pdSourceDelayMs('error','HTTP 503',3),43200000);assert.equal(pdSourceDelayMs('error','HTTP 503',9),86400000);
+ assert.equal(pdSourceDelayMs('error','HTTP 403',1),86400000);assert.equal(pdSourceDelayMs('rate_limited','HTTP 429',1),86400000);
+ assert.equal(pdSourceDelayMs('credentials_required','EPO missing',1),86400000);
+});
+test('adaptive discovery budget backs off at 24h throughput imbalance without changing experiment rules',()=>{
+ const balanced={acquisition:{pending:0,untriaged:0,arrivals:20,completed:25},reading:{pending:0,arrivals:20,completed:20,oldest_wait_hours:null}};
+ assert.equal(flBackpressure(balanced).source_max_per_hour,4);
+ assert.equal(flBackpressure({...balanced,acquisition:{...balanced.acquisition,pending:17}}).source_max_per_hour,2);
+ assert.equal(flBackpressure({...balanced,reading:{...balanced.reading,pending:3}}).source_max_per_hour,1);
+ assert.equal(flBackpressure({...balanced,reading:{...balanced.reading,pending:6}}).source_max_per_hour,0);
+ assert.equal(flBackpressure({...balanced,reading:{...balanced.reading,arrivals:40}}).source_max_per_hour,1);
+ assert.equal(flBackpressure({...balanced,acquisition:{...balanced.acquisition,arrivals:50}}).source_max_per_hour,2);
+});
