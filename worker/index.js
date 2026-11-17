@@ -20,6 +20,7 @@ import {NEWS_HTML,NEWS_UI} from './news-ui.js';
 import {pdCredential} from './production.js';
 import {fnCycle,fnRegister,fnStatus,fnQueue,fnSaveExtract,fnAssertions} from './fundamentals.js';
 import {cpCycle,cpStatus,cpHistory,cpImport,cpUserPlan} from './capital.js';
+import {t4Cycle,t4Ensure,t4Status} from './test4.js';
 import {COMMERCE_HTML,COMMERCE_UI} from './commerce-ui.js';
 import {t3Cycle,t3Status,testGroupMean,testCurrentReturn,managerFeedback,managerFeedbackList} from './parallel.js';
 import {PRODUCT_HTML,PRODUCT_UI,PRODUCT_CSS} from './product-ui.js';
@@ -121,6 +122,23 @@ const specs=[
  {name:'save_research',description:'Salva ricerca con fonti. Un segnale confermato avvia anche l’inizializzazione dell’universo di confronto e il refresh delle chiusure, con esito nel risultato. Le candidature richiedono un segnale confermato; nessuna previsione viene creata automaticamente.',inputSchema:{type:'object',properties:{kind:{type:'string',enum:['universe','case','candidate','signal']},symbol:{type:'string'},sector:{type:'string'},summary:{type:'string'},sources:{type:'array',items:{type:'string'}},verified:{type:'boolean'},signal_id:{type:'string',description:'Obbligatorio per candidate: ID di un segnale già confermato.'}},required:['kind','symbol','sector','summary','sources','verified']}},
  {name:'list_research',description:'Legge casi, candidati e segnali salvati.',inputSchema:{type:'object',properties:{}}}
 ];
+// At most one targeted research-price sweep per 18 hours, shared by Test 4 and capital-v3.1.
+// Price failures stay visible; no replacement quote, credential, paid service or invented price.
+async function t4QuoteSweep(req,env){
+ const now=new Date().toISOString(),last=await env.DB.prepare("SELECT value FROM prod_settings WHERE key='test4_quote_attempt'").first();
+ if(last&&Date.now()-Date.parse(last.value)<18*3600000)return {state:'not_due',last_attempt:last.value};
+ await env.DB.prepare("INSERT INTO prod_settings (key,value) VALUES ('test4_quote_attempt',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(now).run();
+ const results=[];
+ for(const symbol of ['SPY','XLK']){
+  try{const outcome=await call('refresh_market_comparisons',{benchmark_symbol:symbol,limit:1},req,env);results.push({symbol,results:outcome.results||[],state:outcome.status})}
+  catch(e){results.push({symbol,state:'failed',error:String(e.message).slice(0,180)})}
+ }
+ const rows=(await env.DB.prepare("SELECT DISTINCT c.symbol FROM t4_cases c LEFT JOIN t4_outcomes o ON o.case_id=c.id WHERE c.eligible=1 AND o.case_id IS NULL UNION SELECT 'AMD' AS symbol ORDER BY symbol LIMIT 4").all()).results||[];
+ const symbols=rows.map(x=>x.symbol).filter(s=>/^[A-Z]{1,6}$/.test(s));
+ if(symbols.length){try{const outcome=await call('refresh_market_comparisons',{symbols},req,env);results.push({symbols,results:outcome.results||[],state:outcome.status})}catch(e){results.push({symbols,state:'failed',error:String(e.message).slice(0,180)})}}
+ return {state:results.some(x=>x.state==='failed'||x.state==='partial')?'partial':'completed',at:now,results};
+}
+
 async function call(name,a,req,env){
  if(name==='list_predictions'){const all=await registry(env);return a.summary?{count:all.length,symbols:all.map(p=>p.symbol),experimental:all.filter(p=>p.experimental).length,states:all.reduce((v,p)=>(v[p.status]=(v[p.status]||0)+1,v),{})}:all;}
  if(name==='list_market_comparisons')return comparisons(env);
@@ -149,6 +167,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.fundamentals)return {...await fnStatus(env,a.symbol||null),assertions:await fnAssertions(env,a.symbol||null)};
  if(name==='list_research'&&a.financial_queue)return fnQueue(env);
  if(name==='list_research'&&a.capital_status)return cpStatus(env,fxFor);
+ if(name==='list_research'&&a.test4_status)return t4Status(env);
  if(name==='list_research'&&a.market_readiness)return marketReadiness(env);
  if(name==='list_research'&&a.parallel_status)return parallelStatus(env);
  if(name==='list_research'&&a.intelligence_status)return iqStatus(env,a.symbol||null);
@@ -207,8 +226,9 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.observation_source)return fnRegister(env,a.observation_source);
  if(name==='refresh_pattern_calibration'&&a.capital_history_import)return cpImport(env,a.capital_history_import);
  if(name==='refresh_pattern_calibration'&&a.capital_cycle)return cpCycle(env,fxFor);
- if(name==='refresh_pattern_calibration'&&a.parallel_cycle)return t3Cycle(env);
- if(name==='refresh_pattern_calibration'&&a.intelligence_cycle)return {intelligence:await iqCycle(env),parallel:await t3Cycle(env)};
+ if(name==='refresh_pattern_calibration'&&a.parallel_cycle){await t4Ensure(env);const parallel=await t3Cycle(env),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...parallel,test4,market};}
+ if(name==='refresh_pattern_calibration'&&a.test4_cycle){const test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...test4,market};}
+ if(name==='refresh_pattern_calibration'&&a.intelligence_cycle){await t4Ensure(env);const intelligence=await iqCycle(env),parallel=await t3Cycle(env),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {intelligence,parallel,test4,market};}
  if(name==='refresh_pattern_calibration'&&a.intelligence_delta_review)return iqDeltaReview(env,a.intelligence_delta_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.thesis_review)return iqReview(env,a.thesis_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.method_case)return mtCase(env,a.method_case);
@@ -368,6 +388,7 @@ export default {async fetch(req,env){
  if(url.pathname==='/api/market-readiness'&&req.method==='GET')return json(await marketReadiness(env));
  if(url.pathname==='/api/fundamentals/source'){if(req.method!=='POST'||!owner(req,env))return json({error:'Operazione riservata'},403);if(req.headers.get('Origin')!==url.origin)return json({error:'Origine non consentita'},403);try{return json(await fnRegister(env,await req.json()),201)}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/parallel'&&req.method==='GET')return json(await parallelStatus(env));
+ if(url.pathname==='/api/test4'&&req.method==='GET')return json(await t4Status(env));
  if(url.pathname==='/api/manager-feedback'){const principal=simPrincipal(req)||'shared-reader';if(req.method==='GET')return json({admin:owner(req,env),items:await managerFeedbackList(env,principal,owner(req,env))});if(req.method!=='POST')return json({error:'Metodo non ammesso'},405);if(req.headers.get('Origin')!==url.origin)return json({error:'Origine non consentita'},403);try{return json(await managerFeedback(env,await req.json(),principal),201)}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/intelligence'&&req.method==='GET'){const symbol=url.searchParams.get('symbol');if(symbol&&!/^[A-Z0-9.\-]{1,30}$/.test(symbol))return json({error:'Simbolo non valido'},400);return json({...await iqStatus(env,symbol),can_edit:owner(req,env)})}
  if(url.pathname==='/api/skills-review'&&req.method==='GET')return json(VERIFIED_SKILLS_DATA);
