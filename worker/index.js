@@ -396,6 +396,7 @@ export default {async fetch(req,env){
  if(url.pathname==='/api/fundamentals/source'){if(req.method!=='POST'||!owner(req,env))return json({error:'Operazione riservata'},403);if(req.headers.get('Origin')!==url.origin)return json({error:'Origine non consentita'},403);try{return json(await fnRegister(env,await req.json()),201)}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/parallel'&&req.method==='GET')return json(await parallelStatus(env));
  if(url.pathname==='/api/test4'&&req.method==='GET')return json(await t4Status(env));
+ if(url.pathname==='/api/learning'&&req.method==='GET')return json(await lrStatus(env));
  if(url.pathname==='/api/manager-feedback'){const principal=simPrincipal(req)||'shared-reader';if(req.method==='GET')return json({admin:owner(req,env),items:await managerFeedbackList(env,principal,owner(req,env))});if(req.method!=='POST')return json({error:'Metodo non ammesso'},405);if(req.headers.get('Origin')!==url.origin)return json({error:'Origine non consentita'},403);try{return json(await managerFeedback(env,await req.json(),principal),201)}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/intelligence'&&req.method==='GET'){const symbol=url.searchParams.get('symbol');if(symbol&&!/^[A-Z0-9.\-]{1,30}$/.test(symbol))return json({error:'Simbolo non valido'},400);return json({...await iqStatus(env,symbol),can_edit:owner(req,env)})}
  if(url.pathname==='/api/skills-review'&&req.method==='GET')return json(VERIFIED_SKILLS_DATA);
