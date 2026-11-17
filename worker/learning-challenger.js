@@ -11,8 +11,14 @@ export function lrFeatures(p){
  const materiality=a.materiality||'unknown',direction=a.direction||'uncertain';
  return [1,direction==='positive'?1:0,direction==='negative'?1:0,materiality==='high'?1:0,materiality==='medium'?.5:0,Math.min(1,Math.max(0,Number(v[5])||0)),Math.max(-1,Math.min(1,Number(v[1])||0))];
 }
+export function lrTrainingQuality(rows){
+ const valid=rows.filter(r=>r&&(r.y===0||r.y===1)&&typeof r.cohort==='string'&&typeof r.symbol==='string'&&Array.isArray(r.features)&&r.features.length===7&&r.features.every(x=>Number.isFinite(x)&&Math.abs(x)<=10));
+ const positive=valid.filter(r=>r.y===1).length,negative=valid.length-positive,cohorts=new Set(valid.map(r=>r.cohort)).size,issuers=new Set(valid.map(r=>r.symbol)).size,distinct_features=new Set(valid.map(r=>JSON.stringify(r.features))).size;
+ const reasons=[...(valid.length<lrPolicy.minimum_training?['insufficient_matured_training_examples']:[]),...(positive<5||negative<5?['imbalanced_training_outcomes']:[]),...(cohorts<lrPolicy.minimum_training_cohorts?['insufficient_training_cohorts']:[]),...(issuers<lrPolicy.minimum_issuers?['insufficient_training_issuers']:[]),...(distinct_features<2?['no_feature_variation']:[]),...(valid.length!==rows.length?['invalid_training_features_or_labels']:[])];
+ return {eligible:reasons.length===0,reasons,valid_n:valid.length,positive,negative,cohorts,issuers,distinct_features};
+}
 export function lrFit(rows){
- if(rows.length<lrPolicy.minimum_training||new Set(rows.map(x=>x.cohort)).size<lrPolicy.minimum_training_cohorts||new Set(rows.map(x=>x.symbol)).size<lrPolicy.minimum_issuers)return null;
+ if(!lrTrainingQuality(rows).eligible)return null;
  let w=Array(7).fill(0);
  for(let step=0;step<120;step++){
   const grad=w.map(()=>0);
@@ -50,7 +56,7 @@ export async function lrCycle(env,now=new Date().toISOString()){
    trained=(insert.meta?.changes??insert.changes)===1;modelId=id;
   }
  }
- return {state:'completed',activation,training_n:training.length,trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,notice:'Only cases first recorded after activation and within ten minutes; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
+ return {state:'completed',activation,training_n:training.length,training_quality:lrTrainingQuality(training),trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,notice:'Only cases first recorded after activation and within ten minutes; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
 }
 // Paired, strictly prospective challenger/reference scoring. Never merge
 // different model versions into a single claim of predictive improvement.

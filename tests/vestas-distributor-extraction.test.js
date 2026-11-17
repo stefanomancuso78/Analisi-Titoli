@@ -13,7 +13,7 @@ function env(){
 test('Inderes issuer-distribution releases include only Vestas-titled disclosures and enforce same-host URL',async()=>{
  const e=env(),prior=globalThis.fetch;
  const base='https://www.inderes.dk/en/companies/Vestas-Wind-Systems';
- const html='<html><body>'+Array.from({length:6},(_,i)=>'<a href="/en/releases/analyst-report-'+i+'">Independent analyst commentary '+i+'</a>').join('')+
+ const html='<html><body>'+Array.from({length:45},(_,i)=>'<a href="/en/releases/analyst-report-'+i+'">Independent analyst commentary '+i+'</a>').join('')+
  '<a href="/en/releases/vestas-interim-report-q3-2026">Vestas – Interim Report, Third Quarter 2026</a>'+
  '<a href="/en/releases/vestas-order-intake">Vestas Wind Systems A/S: Vestas receives a new order</a>'+ 
  '<a href="/en/releases/transactions-in-connection-with-share-buy-back-programme">Transactions in connection with share buy-back programme 30 July - 5 August 2026</a>'+ 
