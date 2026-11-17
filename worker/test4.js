@@ -9,7 +9,7 @@ const day=s=>s.slice(0,10);
 const later=(d,n)=>new Date(Date.parse(d+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
 const host=s=>{try{return new URL(s).hostname}catch{return ''}};
 const avg=rows=>rows.length?rows.reduce((v,x)=>v+x,0)/rows.length:null;
-const NET_GROSS_FACTOR=.999*.999;
+
 // No training on Test 4 outcomes; all thresholds and controls are frozen at protocol creation.
 export const t4Rules=Object.freeze({
  id:'prospective-decision-v1',type:'prospective-shadow',parent:'adaptive-study-v3',
@@ -28,7 +28,7 @@ export const t4Rules=Object.freeze({
  data_limits:'Nasdaq access/licensing and corporate action coverage unverified commercially; missing dates are recorded as gaps'
 });
 export async function t4Ensure(env,now=new Date().toISOString()){
- const implementation=await hash([t4Decide.toString(),t4Assess.toString(),t4Series.toString()].join('\n'));
+ const implementation=await hash([t4Decide.toString(),t4Assess.toString(),t4Series.toString(),pdPredict.toString(),exActionValue.toString(),exSplitSuspect.toString()].join('\n'));
  const payload=JSON.stringify({...t4Rules,implementation_hash:implementation}),digest=await hash(payload);
  await env.DB.prepare('INSERT OR IGNORE INTO t4_protocols (id,created_at,digest,payload) VALUES (?,?,?,?)').bind(t4Rules.id,now,digest,payload).run();
  const r=await first(env,'SELECT * FROM t4_protocols WHERE id=?',t4Rules.id);
@@ -89,7 +89,7 @@ export function t4Assess(p,entry,quotes,actions,now){
  const assetGross=(assetAction.shares*candidate.close+assetAction.dividends)/entry.asset_close;
  const benchGross=(benchAction.shares*benchmark.close+benchAction.dividends)/entry.benchmark_close;
  if(![assetGross,benchGross].every(v=>Number.isFinite(v)&&v>0))return {state:'invalid_prices'};
- const net=assetGross*NET_GROSS_FACTOR-1,bnet=benchGross*NET_GROSS_FACTOR-1;
+ const factor=(1-t4Rules.cost_entry_bps/10000)*(1-t4Rules.cost_exit_bps/10000),net=assetGross*factor-1,bnet=benchGross*factor-1;
  return {state:'settled',outcome:{kind:'settled',entry_date:entry.date,exit_date:candidate.trade_date,
   asset_close:candidate.close,asset_source:candidate.source,benchmark_close:benchmark.close,benchmark_source:benchmark.source,
   asset_gross_return:assetGross-1,benchmark_gross_return:benchGross-1,net_return:net,benchmark_net_return:bnet,alpha:net-bnet,
@@ -138,7 +138,7 @@ export function t4Metrics(cases){
  const lower=variance===null?null:meanCohort-1.96*Math.sqrt(variance/cohortMeans.length);
  const brier=x=>avg(matured.map(c=>(c.p[x]-c.outcome.y)**2));
  const economicBrier=brier('reference_probability'),priceOnlyBrier=brier('price_only_probability');
- const pairedCoverage=selected.length?paired.length/(paired.length+gaps.filter(c=>c.p.selected).length):null;
+ const covered=paired.length+gaps.filter(c=>c.p.selected).length,pairedCoverage=covered?paired.length/covered:null;
  const avgNet=avg(paired.map(c=>c.outcome.net_return)),avgBench=avg(paired.map(c=>c.outcome.benchmark_net_return));
  const symbols=new Set(paired.map(c=>c.p.symbol)).size;
  const minimums=paired.length>=t4Rules.minimum_paired&&matured.length>=t4Rules.minimum_paired&&
@@ -156,9 +156,9 @@ export function t4Metrics(cases){
 export async function t4Status(env){
  const row=await first(env,'SELECT * FROM t4_protocols WHERE id=?',t4Rules.id);
  if(!row)return {state:'not_started',protocol:null,metrics:t4Metrics([]),notice:'Avviare Test 4 solo tramite ciclo autenticato; nessun dato retrodatato'};
- const expected=await hash(JSON.stringify({...t4Rules,implementation_hash:await hash([t4Decide.toString(),t4Assess.toString(),t4Series.toString()].join('\n'))}));
+ const expected=await hash(JSON.stringify({...t4Rules,implementation_hash:await hash([t4Decide.toString(),t4Assess.toString(),t4Series.toString(),pdPredict.toString(),exActionValue.toString(),exSplitSuspect.toString()].join('\n'))}));
  const integrity=row.digest===await hash(row.payload)&&row.digest===expected;
- const result=await all(env,'SELECT c.*,e.payload entry,o.payload outcome FROM t4_cases c LEFT JOIN t4_entries e ON e.case_id=c.id LEFT JOIN t4_outcomes o ON o.case_id=c.id ORDER BY c.published_at DESC LIMIT 1000');
+ const result=await all(env,'SELECT c.*,e.payload entry,o.payload outcome FROM t4_cases c LEFT JOIN t4_entries e ON e.case_id=c.id LEFT JOIN t4_outcomes o ON o.case_id=c.id ORDER BY c.published_at DESC');
  const cases=result.map(r=>({id:r.id,symbol:r.symbol,p:JSON.parse(r.payload),entry:r.entry?JSON.parse(r.entry):null,outcome:r.outcome?JSON.parse(r.outcome):null}));
  return {state:integrity?'running':'protocol_review',protocol:{...JSON.parse(row.payload),created_at:row.created_at,integrity,payload_integrity:row.digest===await hash(row.payload),implementation_compatible:row.digest===expected},
   metrics:t4Metrics(cases),recent:cases.slice(0,20).map(c=>({id:c.id,symbol:c.symbol,published_at:c.p.published_at,selected:c.p.selected,
