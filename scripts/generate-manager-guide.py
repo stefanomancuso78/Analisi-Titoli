@@ -15,10 +15,10 @@ navy=colors.HexColor('#142F40'); teal=colors.HexColor('#087C69'); muted=colors.H
 styles={
  'title':ParagraphStyle('title',fontName='DB',fontSize=24,leading=29,textColor=navy,spaceAfter=10),
  'sub':ParagraphStyle('sub',fontName='D',fontSize=10.3,leading=15,textColor=muted,spaceAfter=12),
- 'h':ParagraphStyle('h',fontName='DB',fontSize=12.5,leading=16,textColor=navy,spaceBefore=10,spaceAfter=5),
- 'p':ParagraphStyle('p',fontName='D',fontSize=9,leading=13.2,textColor=navy,spaceAfter=7),
- 'small':ParagraphStyle('small',fontName='D',fontSize=8.2,leading=12,textColor=muted,spaceAfter=7),
- 'cell':ParagraphStyle('cell',fontName='D',fontSize=8.1,leading=11.5,textColor=navy),
+ 'h':ParagraphStyle('h',fontName='DB',fontSize=12.5,leading=16,textColor=navy,spaceBefore=8,spaceAfter=4),
+ 'p':ParagraphStyle('p',fontName='D',fontSize=8.7,leading=12.2,textColor=navy,spaceAfter=5),
+ 'small':ParagraphStyle('small',fontName='D',fontSize=8.2,leading=12,textColor=muted,spaceAfter=5),
+ 'cell':ParagraphStyle('cell',fontName='D',fontSize=7.9,leading=10.5,textColor=navy),
  'white':ParagraphStyle('white',fontName='DB',fontSize=8.5,leading=12,textColor=colors.white),
  'kicker':ParagraphStyle('kicker',fontName='DB',fontSize=8,leading=11,textColor=teal,spaceAfter=10),
 }
@@ -49,11 +49,11 @@ class FlowDiagram(Flowable):
    c.setFillColor(navy);c.setFont('DB',9);c.drawString(55,y+33,title);c.setFont('D',8.5);c.setFillColor(muted);c.drawString(55,y+16,body)
    if i<5:
     c.setStrokeColor(teal);c.setLineWidth(1);c.line(self.width/2,y-1,self.width/2,y-8);c.line(self.width/2-3,y-5,self.width/2,y-8);c.line(self.width/2+3,y-5,self.width/2,y-8)
-heading('Guida per il gestore · 13 novembre 2026','Come funziona StokIQ','Dall’informazione al segnale, dal portafoglio simulato alla verifica dei risultati. Una guida al processo attualmente implementato.')
+heading('Guida per il gestore · 17 novembre 2026','Come funziona StokIQ','Dall’informazione al segnale, dal portafoglio simulato alla verifica dei risultati. Una guida al processo attualmente implementato.')
 add('StokIQ è un sistema sperimentale di ricerca finanziaria e simulazione. Parte dalle informazioni raccolte, costruisce ipotesi verificabili e segue ciò che accade dopo. Il paniere può ampliarsi quando emergono nuove società qualificate: non è soltanto una lista fissa di titoli da commentare.')
 story.extend([Spacer(1,8),FlowDiagram()])
 box('Il principio centrale','Conservare ciò che era noto al momento della scelta e confrontarlo con gli esiti successivi. Il movimento di un prezzo dopo una notizia <b>non dimostra, da solo, un rapporto di causa ed effetto</b>.')
-add('Lettura rapida: schema a pagina 1; fonti a pagina 2; grafo delle conoscenze a pagina 3; test a pagina 4; capitale a pagina 5; automiglioramento a pagina 6; verifiche e limiti a pagina 7.','small')
+add('Lettura rapida: schema, fonti e grafo delle conoscenze; quattro test e metriche; simulazione del capitale; apprendimento e limiti; prezzo e aspettative.','small')
 story.append(PageBreak())
 heading('01 / Osservare e comprendere','Dalle fonti alla tesi','Prima si verifica l’informazione. Poi si valuta se può avere conseguenze economiche per una società o per altre imprese collegate.')
 section('1. Acquisire le informazioni','Il sistema osserva le fonti collegate: Investor Relations, documenti SEC e dati di bilancio strutturati, fonti regolatorie e cliniche, brevetti e feed di stampa. Per la stampa pubblica può disporre del solo titolo, editore e collegamento: questo viene distinto dalla lettura integrale di un documento primario. La copertura dei connettori è parziale e gli errori sono registrati.')
@@ -91,9 +91,11 @@ section('Confronti economici coerenti','I confronti di bilancio richiedono metri
 table(['Gruppo','Funzione del confronto'],[
  ('Test 1 · riferimento','Mantiene il protocollo originario congelato e prosegue la misurazione degli episodi già registrati.'),
  ('Test 2 · analisi economica','Confronta prezzo più interpretazione economica con un controllo basato sui prezzi, sugli stessi casi.'),
- ('Test 3 · adattivo sperimentale','Raccoglie esiti per confrontare versioni nuove con un riferimento congelato. Le versioni sperimentali operano in parallelo, senza ordini reali.')],[155,width-155])
+ ('Test 3 · adattivo sperimentale','Raccoglie esiti per confrontare nuove versioni con un riferimento congelato, senza ordini reali.'),
+ ('Test 4 · prospettico contro SPY','Misura nuovi casi dopo l’avvio del protocollo: rendimento netto, confronto con SPY e differenza rispetto al mercato, solo su esiti maturati e appaiati.')],[155,width-155])
 section('Ingresso e orizzonte di osservazione','L’ingresso simulato usa una chiusura completa successiva alla data di pubblicazione della previsione. I test principali misurano l’esito a 30 giorni di calendario dall’ingresso. Prezzi mancanti, valute incoerenti o operazioni societarie sospette possono sospendere la valutazione.')
-box('Come leggere il rendimento medio dei tre gruppi','È una media equiponderata per titolo, usando l’ultimo episodio di ciascuna società. I casi non valutabili sono esclusi e il denominatore resta visibile. <b>Non è il rendimento di un portafoglio</b>; differenze nelle date e nei titoli impediscono di decretare il modello migliore guardando soltanto la media grezza.')
+box('Metriche diverse: non confrontare le quattro medie come una classifica','Per Test 1–3 è una media equiponderata per titolo, usando l’ultimo episodio di ciascuna società. Test 4 misura separatamente i casi selezionati maturati e appaiati a SPY; senza esiti disponibili resta in attesa. I casi non valutabili sono esclusi e il denominatore resta visibile. <b>Non è il rendimento di un portafoglio</b>; differenze nelle date e nei titoli impediscono di decretare il modello migliore guardando soltanto la media grezza.')
+section('Grafici e integrità storica','Le curve iniziano dalle rilevazioni effettivamente registrate: non ricostruiscono rendimenti precedenti. Una chiusura al solo giorno di ingresso non è ancora un rendimento osservato; i soli costi convenzionali restano nello storico ma non vengono tracciati come performance di mercato. Il noto integrity: false di Test 1 resta visibile: integrità storica e compatibilità del motore sono verifiche distinte.')
 story.append(PageBreak())
 heading('04 / Simulare il capitale','Dal segnale al portafoglio','L’utente imposta un budget, sceglie euro o dollari e seleziona un profilo. Il capitale viene distribuito soltanto tra candidati e dati idonei.')
 table(['Profilo','Esposizione obiettivo','Limite per titolo','Limite per settore'],[
@@ -123,22 +125,22 @@ table(['Meccanismo','Quando può affinarsi'],[
  ('News anche senza segnale · priorità','Unità società/giorno, incluse ipotesi incerte. Servono almeno 20 unità mature a 5 giorni, tre società e tre coorti, con benchmark coerente e volatilità precedente disponibile.')],[165,width-165])
 add('La priorità delle news misura l’ampiezza relativa dei movimenti successivi, non la loro causa né la probabilità di profitto. Modifica soltanto l’ordine delle ricerche future entro lo stesso livello di urgenza. I titoli stampa ripetuti sulla stessa società nello stesso giorno non diventano osservazioni indipendenti.','small')
 section('Cosa cambia e cosa resta fermo','Ogni nuova versione conserva dati usati, pesi e data di attivazione. Vale per le previsioni successive. Le precedenti mantengono i criteri originali; i test congelati restano confrontabili. Le versioni sperimentali non vengono promosse automaticamente. Lo stato dell’apprendimento e il numero di versioni addestrate sono visibili nel sito. Finché i campioni non bastano, il sistema raccoglie osservazioni: non va presentato come già migliorato.')
-section('Cosa controllare nel sito','<b>Test 1 · 2 · 3:</b> risultati e denominatori. <b>Notizie e impatti:</b> archivio, verifiche, allerte e osservazioni. <b>Bilanci:</b> metriche e confronti. <b>Osservatorio / Previsioni:</b> candidati e motivazioni. <b>Portafogli / Uscite:</b> capitale e verifiche. <b>Fonti / Laboratorio:</b> copertura, errori e studi storici separati. <b>FAQ:</b> guida e suggerimenti del gestore.')
+section('Cosa controllare nel sito','<b>Menu Test · 1, 2, 3 e 4:</b> risultati, denominatori, apprendimento e dettagli dei casi. Le metriche di Test 4 sono distinte da quelle dei primi tre test. <b>Notizie e impatti:</b> archivio, verifiche, allerte e osservazioni. <b>Bilanci:</b> metriche e confronti. <b>Osservatorio / Previsioni:</b> candidati e motivazioni. <b>Portafogli / Uscite:</b> capitale e verifiche. <b>Fonti / Laboratorio:</b> copertura, errori e studi storici separati. <b>FAQ:</b> guida e suggerimenti del gestore.')
 box('Operatività e limiti attuali','Il processo è pianificato su base <b>oraria</b>: non è un servizio in tempo reale e non garantisce uscite immediate. Copertura di stampa, brevetti e bilanci parziale; fonti possono essere indisponibili o limitate. Servizi premium e licenze professionali richiedono attivazioni dedicate. Nessun ordine reale e nessuna garanzia di rendimento.')
-add('<link href="https://stokiq.online/#faq" color="#087C69">stokiq.online · FAQ e guida operativa</link>  |  Documento descrittivo del flusso implementato al 13 novembre 2026. I contatori e lo stato dei singoli casi cambiano nel sito.','small')
+add('<link href="https://stokiq.online/#faq" color="#087C69">stokiq.online · FAQ e guida operativa</link>  |  Documento descrittivo del flusso implementato al 17 novembre 2026. I contatori e lo stato dei singoli casi cambiano nel sito.','small')
 
 story.append(PageBreak())
 heading('07 / Prezzo e aspettative','Il mercato può arrivare prima','Un brevetto o un annuncio può cambiare le aspettative subito, mentre gli effetti sui risultati arrivano molto più tardi.')
 section('Tre livelli da distinguere','<b>Informazioni disponibili:</b> cosa era pubblico e quando lo abbiamo acquisito.<br/><b>Reazione del mercato:</b> come si muove il prezzo prima e dopo la notizia.<br/><b>Effetto economico:</b> se e quando possono cambiare ricavi, margini o rischi. Una reazione forte non dimostra da sola un effetto economico duraturo.')
 box('Il percorso dell’osservatore','Documento datato → movimento precedente → chiusura iniziale successiva → osservazioni a 1, 5 e 20 sedute → confronto con SPY se disponibile → memoria collegata al documento nel grafo.')
-section('Cosa fa oggi','L’Osservatorio registra separatamente queste misure. Conserva una rilevazione giornaliera e aggiorna il quadro più recente. Se il documento è stato acquisito dopo la pubblicazione, lo indica come retrospettivo. I tre test congelati e le loro decisioni non vengono modificati.')
+section('Cosa fa oggi','L’Osservatorio registra separatamente queste misure. Conserva una rilevazione giornaliera e aggiorna il quadro più recente. Se il documento è stato acquisito dopo la pubblicazione, lo indica come retrospettivo. I protocolli dei quattro test e le decisioni già registrate non vengono modificati.')
 section('Cosa non possiamo dedurre','Un movimento precedente non prova una fuga di notizie. Altri eventi, il settore o il mercato possono spiegare il prezzo. Non attribuiamo automaticamente un’emozione agli investitori e non chiamiamo causa un semplice collegamento temporale.')
 section('Il limite delle chiusure giornaliere','La misura parte dalla prima chiusura disponibile strettamente successiva alla data della pubblicazione: esclude la reazione immediata e il salto di apertura. Misura sedute osservate, non rendimenti eseguibili. I dati mancanti restano mancanti; discontinuità evidenti richiedono verifica.')
 box('Per un vero modello di breve','Occorrono prezzi intraday, orari precisi delle notizie, misure delle aspettative precedenti e campioni sufficienti. Questo osservatore prepara dati verificabili per un esperimento futuro: non è già un modello emotivo addestrato o una regola di acquisto.')
 
 def page(c,doc):
  c.saveState();c.setFillColor(navy);c.setFont('DB',19);c.drawString(50,H-43,'Stok');c.setFillColor(teal);c.drawString(96,H-43,'IQ');c.setFont('D',8);c.setFillColor(muted);c.drawRightString(W-50,H-39,'GUIDA OPERATIVA / GESTORE');c.setStrokeColor(line);c.line(50,H-57,W-50,H-57)
- c.line(50,43,W-50,43);c.setFont('D',7.3);c.setFillColor(muted);c.drawString(50,29,'StokIQ · Ricerca e simulazione · 13 novembre 2026');c.drawRightString(W-50,29,f'{doc.page} / 8');c.restoreState()
+ c.line(50,43,W-50,43);c.setFont('D',7.3);c.setFillColor(muted);c.drawString(50,29,'StokIQ · Ricerca e simulazione · 17 novembre 2026');c.drawRightString(W-50,29,f'{doc.page}');c.restoreState()
 doc=SimpleDocTemplate(str(OUT),pagesize=A4,rightMargin=50,leftMargin=50,topMargin=76,bottomMargin=48,title='StokIQ — Il flusso operativo spiegato al gestore',author='StokIQ',subject='Fonti, segnali, portafogli simulati e apprendimento sperimentale')
 doc.build(story,onFirstPage=page,onLaterPages=page)
-r=PdfReader(str(OUT));print({'file':str(OUT),'pages':len(r.pages),'bytes':OUT.stat().st_size,'characters':[len(x.extract_text()) for x in r.pages]});assert len(r.pages)==8,'Unexpected page overflow'
+r=PdfReader(str(OUT));print({'file':str(OUT),'pages':len(r.pages),'bytes':OUT.stat().st_size,'characters':[len(x.extract_text()) for x in r.pages]});assert 8 <= len(r.pages) <= 9,'Unexpected page overflow'
