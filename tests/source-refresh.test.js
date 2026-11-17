@@ -30,6 +30,7 @@ test('source retry delay backs off temporary errors and does not retry denied or
  assert.equal(pdSourceDelayMs('error','HTTP 503',3),43200000);assert.equal(pdSourceDelayMs('error','HTTP 503',9),86400000);
  assert.equal(pdSourceDelayMs('error','HTTP 403',1),86400000);assert.equal(pdSourceDelayMs('rate_limited','HTTP 429',1),86400000);
  assert.equal(pdSourceDelayMs('credentials_required','EPO missing',1),86400000);
+ assert.equal(pdSourceDelayMs('error','HTTP 403',2),72*3600000);assert.equal(pdSourceDelayMs('rate_limited','HTTP 429',3),168*3600000);
 });
 test('adaptive discovery budget backs off at 24h throughput imbalance without changing experiment rules',()=>{
  const balanced={acquisition:{pending:0,untriaged:0,arrivals:20,completed:25},reading:{pending:0,arrivals:20,completed:20,oldest_wait_hours:null}};
@@ -39,4 +40,12 @@ test('adaptive discovery budget backs off at 24h throughput imbalance without ch
  assert.equal(flBackpressure({...balanced,reading:{...balanced.reading,pending:6}}).source_max_per_hour,0);
  assert.equal(flBackpressure({...balanced,reading:{...balanced.reading,arrivals:40}}).source_max_per_hour,1);
  assert.equal(flBackpressure({...balanced,acquisition:{...balanced.acquisition,arrivals:50}}).source_max_per_hour,2);
+});
+
+test('alternative channels are distinct real issuer origins; newswire secondary only',()=>{
+ const source=readFileSync('worker/production.js','utf8');
+ for(const [id,symbol,host] of [['ir-alt-VWS.CO-media','VWS.CO','www.vestas.com/en/media/company-news'],['ir-alt-SU.PA-regulated','SU.PA','www.se.com/ww/en/about-us/investor-relations/regulatory-information/overview/']]){
+  const line=source.split('\n').find(x=>x.includes("id:'"+id+"'"));assert.ok(line,id);assert.ok(line.includes("symbol:'"+symbol+"'"),id);assert.ok(line.includes(host),id);assert.ok(line.includes("enabled:true"),id);assert.match(line,/HTML extraction must be verified|regulated disclosure list/);
+ }
+ const rss=source.split('\n').find(x=>x.includes("id:'agg-businesswire-earnings'"));assert.ok(rss);assert.match(rss,/kind:'aggregator-rss',provider:'businesswire',primary:false/);assert.match(rss,/feed\.businesswire\.com/);assert.match(rss,/Secondary newswire discovery only/);
 });
