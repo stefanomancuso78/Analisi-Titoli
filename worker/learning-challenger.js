@@ -29,12 +29,12 @@ export async function lrCycle(env,now=new Date().toISOString()){
  const prior=priorModels.length?JSON.parse(priorModels[0].value):null;
  // Score ONLY cases born after activation, before their first market outcome.
  // Use previously stored model, never a model trained later in this cycle.
- const cases=await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.payload FROM parallel_cases c WHERE c.created_at>? AND c.created_at<=? AND NOT EXISTS(SELECT 1 FROM parallel_outcomes o WHERE o.case_id=c.id) ORDER BY c.created_at,id LIMIT 300",activation,now);
+ const cutoff=new Date(Date.parse(now)-10*60000).toISOString(),cases=await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.fold,c.payload FROM parallel_cases c WHERE c.created_at>? AND c.created_at>=? AND c.created_at<=? AND NOT EXISTS(SELECT 1 FROM parallel_outcomes o WHERE o.case_id=c.id) ORDER BY c.created_at,c.id LIMIT 300",activation,cutoff,now);
  let predicted=0,untrained=0;
  for(const c of cases){
   const p=JSON.parse(c.payload),features=lrFeatures(p);
   const valid=prior&&Date.parse(prior.trained_at)<Date.parse(c.created_at);
-  const payload={case_id:c.id,symbol:c.symbol,case_created_at:c.created_at,predicted_at:now,input_as_of:c.created_at,features,model_id:valid?prior.id:'untrained-baseline',probability:valid?lrSigmoid(prior.weights.reduce((s,w,i)=>s+w*features[i],0)):null,reference_probability:Number.isFinite(p.reference_probability)?p.reference_probability:null,policy_id:lrPolicy.id,real_trade:false};
+  const payload={case_id:c.id,symbol:c.symbol,case_created_at:c.created_at,fold:c.fold,predicted_at:now,input_as_of:c.created_at,features,model_id:valid?prior.id:'untrained-baseline',probability:valid?lrSigmoid(prior.weights.reduce((s,w,i)=>s+w*features[i],0)):null,reference_probability:Number.isFinite(p.reference_probability)?p.reference_probability:null,policy_id:lrPolicy.id,real_trade:false};
   const out=await env.DB.prepare('INSERT OR IGNORE INTO prod_settings VALUES (?,?)').bind('lr:prediction:'+c.id,JSON.stringify(payload)).run();
   if((out.meta?.changes??out.changes)===1){predicted++;if(!valid)untrained++}
  }
@@ -47,13 +47,13 @@ export async function lrCycle(env,now=new Date().toISOString()){
   const insert=await env.DB.prepare('INSERT OR IGNORE INTO prod_settings VALUES (?,?)').bind(key,JSON.stringify(data)).run();
   trained=(insert.meta?.changes??insert.changes)===1;modelId=id;
  }
- return {state:'completed',activation,training_n:training.length,trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,notice:'Only future cases after activation; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
+ return {state:'completed',activation,training_n:training.length,trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,notice:'Only cases first recorded after activation and within ten minutes; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
 }
 export async function lrStatus(env){
  const activation=await lrFirst(env,'SELECT value FROM prod_settings WHERE key=?','lr:activation:'+lrPolicy.id);
  const models=await lrAll(env,"SELECT value FROM prod_settings WHERE key LIKE 'lr:model:%' ORDER BY json_extract(value,'$.trained_at') DESC LIMIT 12");
- const saved=await lrAll(env,"SELECT value FROM prod_settings WHERE key LIKE 'lr:prediction:%' ORDER BY json_extract(value,'$.predicted_at') DESC LIMIT 1000");
+ const saved=await lrAll(env,"SELECT s.value,o.payload outcome FROM prod_settings s LEFT JOIN parallel_outcomes o ON o.case_id=json_extract(s.value,'$.case_id') WHERE s.key LIKE 'lr:prediction:%' ORDER BY json_extract(s.value,'$.predicted_at') DESC LIMIT 1000");
  const predictions=saved.map(r=>JSON.parse(r.value)),results=[];
- for(const p of predictions){if(p.probability==null)continue;const o=await lrFirst(env,'SELECT payload FROM parallel_outcomes WHERE case_id=?',p.case_id);if(o){const y=JSON.parse(o.payload).y;if(y===0||y===1)results.push({case_id:p.case_id,model_id:p.model_id,brier:(p.probability-y)**2,reference_brier:p.reference_probability==null?null:(p.reference_probability-y)**2})}}
+ for(let i=0;i<predictions.length;i++){const p=predictions[i],o=saved[i].outcome;if(p.fold!=='evaluation'||p.probability==null||!o)continue;const y=JSON.parse(o).y;if(y===0||y===1)results.push({case_id:p.case_id,model_id:p.model_id,brier:(p.probability-y)**2,reference_brier:p.reference_probability==null?null:(p.reference_probability-y)**2})}
  return {policy:lrPolicy,activation:activation?.value||null,models:models.map(r=>JSON.parse(r.value)),predictions_registered:predictions.length,trained_predictions:predictions.filter(p=>p.probability!=null).length,matured_evaluations:results.length,trained_brier:results.length?results.reduce((a,r)=>a+r.brier,0)/results.length:null,reference_brier:results.length&&results.every(r=>r.reference_brier!=null)?results.reduce((a,r)=>a+r.reference_brier,0)/results.length:null,validated:false,automatic_promotion:false,notice:'Evaluation counts are descriptive only; prospective benchmark and independent managerial review are still required.'};
 }
