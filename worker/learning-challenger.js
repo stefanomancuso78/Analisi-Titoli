@@ -89,7 +89,7 @@ export async function lrStatus(env,now=new Date().toISOString()){
  const evaluationLimit=20000,limited=evaluable.length>evaluationLimit,results=[];
  for(const row of evaluable.slice(0,evaluationLimit)){
   const p=JSON.parse(row.value),at=row.outcome_at;
-  if(!at||!(Date.parse(p.case_created_at)<=Date.parse(p.predicted_at)&&Date.parse(p.predicted_at)<Date.parse(at)))continue;
+  if(!at||!(Date.parse(p.case_created_at)<=Date.parse(p.predicted_at)&&Date.parse(p.predicted_at)<=Date.parse(p.case_created_at)+10*60000&&Date.parse(p.predicted_at)<Date.parse(at)))continue;
   const y=JSON.parse(row.outcome).y;
   if((y===0||y===1)&&Number.isFinite(p.probability)&&p.probability>=0&&p.probability<=1)
    results.push({case_id:p.case_id,model_id:p.model_id,cohort:p.case_created_at.slice(0,10),symbol:p.symbol,brier:(p.probability-y)**2,reference_brier:Number.isFinite(p.reference_probability)?(p.reference_probability-y)**2:null});
