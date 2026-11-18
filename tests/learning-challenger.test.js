@@ -202,3 +202,19 @@ test('evaluation metrics include matured prospective outcomes older than last 10
  assert.equal(result.evaluation.unpaired_or_unscorable,0);
  e.db.close();
 });
+
+test('late registered prediction is never counted as a prospective scored evaluation',async()=>{
+ const e=fixture();
+ const created='2026-11-17T10:00:00.000Z';
+ addCase(e.db,'late-window',created,'evaluation','VWS.CO');
+ mature(e.db,'late-window','2026-12-17T10:00:00.000Z',1);
+ e.db.prepare('INSERT INTO prod_settings VALUES (?,?)').run('lr:prediction:late-window',JSON.stringify({
+  case_id:'late-window',symbol:'VWS.CO',fold:'evaluation',case_created_at:created,
+  predicted_at:'2026-11-17T10:11:00.000Z',model_id:'late-model',
+  probability:.8,reference_probability:.5
+ }));
+ const status=await lrStatus(e,'2026-12-18T00:00:00.000Z');
+ assert.equal(status.matured_evaluations,0);
+ assert.equal(status.evaluation.unpaired_or_unscorable,1);
+ e.db.close();
+});
