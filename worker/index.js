@@ -233,6 +233,8 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.observation_source)return fnRegister(env,a.observation_source);
  if(name==='refresh_pattern_calibration'&&a.capital_history_import)return cpImport(env,a.capital_history_import);
  if(name==='refresh_pattern_calibration'&&a.capital_cycle)return cpCycle(env,fxFor);
+ // Independent retry path for prospective shadow registration: never creates or changes Test 1-4 cases.
+ if(name==='refresh_pattern_calibration'&&a.learning_cycle){const learning=await lrCycle(env);return {learning,registration:(await lrStatus(env)).registration};}
  if(name==='refresh_pattern_calibration'&&a.parallel_cycle){await t4Ensure(env);await lrActivate(env);const parallel=await t3Cycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...parallel,learning,test4,market};}
  if(name==='refresh_pattern_calibration'&&a.test4_cycle){const test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...test4,market};}
  if(name==='refresh_pattern_calibration'&&a.intelligence_cycle){await t4Ensure(env);await lrActivate(env);const intelligence=await iqCycle(env),parallel=await t3Cycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {intelligence,parallel,learning,test4,market};}
