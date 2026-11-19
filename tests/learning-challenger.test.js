@@ -251,3 +251,16 @@ test('shadow registration traverses more than 300 eligible cases without losing 
  assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:prediction:%'").get().n,305);
  e.db.close();
 });
+
+
+test('independent learning retry route cannot rerun or modify Test 3',()=>{
+ const routes=readFileSync('worker/index.js','utf8');
+ const start=routes.indexOf("a.learning_cycle){");
+ assert.ok(start>0,'missing independent shadow retry');
+ const end=routes.indexOf("\n if(name==='refresh_pattern_calibration'&&a.parallel_cycle)",start);
+ assert.ok(end>start);
+ const route=routes.slice(start,end);
+ assert.match(route,/await lrCycle\(env\)/);
+ assert.match(route,/await lrStatus\(env\)/);
+ assert.doesNotMatch(route,/t3Cycle|t4Cycle|iqCycle/);
+});
