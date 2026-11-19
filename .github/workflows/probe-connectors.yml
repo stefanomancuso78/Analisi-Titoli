@@ -1,0 +1,23 @@
+name: Probe source connectors (predeploy)
+on:
+  pull_request:
+    paths:
+      - 'scripts/probe-connectors.mjs'
+      - '.github/workflows/probe-connectors.yml'
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Probe public sources (no credentials or writes)
+        run: node scripts/probe-connectors.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: connector-predeploy-probe
+          path: reports/connector-predeploy-probe.json
+          retention-days: 14
