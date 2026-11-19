@@ -132,7 +132,7 @@ const saved=[];for(const event of events)saved.push(await pdIngest(env,src,event
 }catch(e){error=e.message;status=status==='credentials_required'?status:/HTTP 429/.test(error)?'rate_limited':'error';const failed=await pdFirst(env,"INSERT INTO prod_settings(key,value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1 RETURNING value",'source_failures:'+src.id),delay=pdSourceDelayMs(status,error,Number(failed?.value)||1),next_poll=new Date(Date.now()+delay).toISOString();
 // Reversible circuit breaker only for the known blocked GlobeNewswire public RSS.
 // Business Wire/Nasdaq are already independent discovery channels, not equivalent coverage.
-if(src.id==='agg-globenewswire-public'&&src.provider==='globenewswire'&&/\\bHTTP 403\\b/.test(error)&&Number(failed?.value)>=3){
+if(src.id==='agg-globenewswire-public'&&src.provider==='globenewswire'&&/\bHTTP 403\b/.test(error)&&Number(failed?.value)>=3){
   const disabled={...src,enabled:false,disabled_reason:'Repeated HTTP 403; manual review before reactivation',disabled_at:started};
   await pdRun(env,'UPDATE prod_sources SET payload=? WHERE id=? AND payload=?',JSON.stringify(disabled),src.id,row.payload);
   await pdRun(env,"INSERT INTO prod_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",'source_circuit_breaker:'+src.id,JSON.stringify({at:started,reason:'HTTP 403 repeated',failures:Number(failed.value),previous_payload:row.payload}));
