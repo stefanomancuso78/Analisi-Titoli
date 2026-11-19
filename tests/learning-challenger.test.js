@@ -218,3 +218,21 @@ test('late registered prediction is never counted as a prospective scored evalua
  assert.equal(status.evaluation.unpaired_or_unscorable,1);
  e.db.close();
 });
+
+test('registration coverage does not treat late or mismatched stored predictions as valid',async()=>{
+ const e=fixture();
+ await lrActivate(e,'2026-11-17T10:00:00.000Z');
+ addCase(e.db,'late-stored','2026-11-17T10:01:00.000Z','evaluation','VWS.CO');
+ addCase(e.db,'mismatched','2026-11-17T10:02:00.000Z','evaluation','SU.PA');
+ addCase(e.db,'valid','2026-11-17T10:03:00.000Z','evaluation','STM.PA');
+ const save=(id,created,predicted,recordedCreated=created)=>e.db.prepare('INSERT INTO prod_settings VALUES (?,?)').run('lr:prediction:'+id,JSON.stringify({case_id:id,case_created_at:recordedCreated,predicted_at:predicted,fold:'evaluation',model_id:'untrained-baseline',probability:null}));
+ save('late-stored','2026-11-17T10:01:00.000Z','2026-11-17T10:12:00.000Z');
+ save('mismatched','2026-11-17T10:02:00.000Z','2026-11-17T10:03:00.000Z','2026-11-17T09:00:00.000Z');
+ save('valid','2026-11-17T10:03:00.000Z','2026-11-17T10:13:00.000Z');
+ const status=await lrStatus(e,'2026-11-17T11:00:00.000Z');
+ assert.equal(status.registration.cases_since_activation,3);
+ assert.equal(status.registration.registered,1);
+ assert.equal(status.registration.overdue_missing,2);
+ assert.equal(status.registration.state,'missed_forecast_window');
+ e.db.close();
+});
