@@ -236,3 +236,18 @@ test('registration coverage does not treat late or mismatched stored predictions
  assert.equal(status.registration.state,'missed_forecast_window');
  e.db.close();
 });
+
+
+test('shadow registration traverses more than 300 eligible cases without losing the last batch',async()=>{
+ const e=fixture();
+ await lrActivate(e,'2026-11-19T10:00:00.000Z');
+ for(let i=0;i<305;i++)addCase(e.db,'batch-'+String(i).padStart(4,'0'),'2026-11-19T10:01:00.000Z','evaluation','ISS'+i);
+ const run=await lrCycle(e,'2026-11-19T10:02:00.000Z');
+ assert.equal(run.predictions_registered,305);
+ assert.equal(run.registration_batches,2);
+ assert.equal((await lrStatus(e,'2026-11-19T10:20:00.000Z')).registration.overdue_missing,0);
+ const repeat=await lrCycle(e,'2026-11-19T10:03:00.000Z');
+ assert.equal(repeat.predictions_registered,0);
+ assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:prediction:%'").get().n,305);
+ e.db.close();
+});

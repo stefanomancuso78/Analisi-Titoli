@@ -42,14 +42,26 @@ export async function lrCycle(env,now=new Date().toISOString()){
  if(prior&&(!prior.integrity_hash||prior.integrity_hash!==await lrHash(JSON.stringify(Object.fromEntries(Object.entries(prior).filter(([k])=>k!=='integrity_hash'))))))return {state:'model_integrity_review',model_id:prior.id,notice:'Existing learner model changed or has no checksum; forecasting and training paused. Existing Test 1–4 untouched.'};
  // Score ONLY cases born after activation, before their first market outcome.
  // Use previously stored model, never a model trained later in this cycle.
- const cutoff=new Date(Date.parse(now)-10*60000).toISOString(),cases=await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.fold,c.payload FROM parallel_cases c WHERE c.created_at>=? AND c.created_at>=? AND c.created_at<=? AND NOT EXISTS(SELECT 1 FROM parallel_outcomes o WHERE o.case_id=c.id) ORDER BY c.created_at,c.id LIMIT 300",activation,cutoff,now);
- let predicted=0,untrained=0;
- for(const c of cases){
+ const cutoff=new Date(Date.parse(now)-10*60000).toISOString();
+ let predicted=0,untrained=0,registrationBatches=0;
+ // Keyset pagination: a fixed first-page cap silently omitted eligible cases.
+ // Every batch advances past its last case, even when INSERT OR IGNORE skips a duplicate.
+ let lastCreated=null,lastId=null;
+ while(true){
+  const cases=lastCreated===null
+   ?await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.fold,c.payload FROM parallel_cases c WHERE c.created_at>=? AND c.created_at>=? AND c.created_at<=? AND NOT EXISTS(SELECT 1 FROM parallel_outcomes o WHERE o.case_id=c.id) ORDER BY c.created_at,c.id LIMIT 300",activation,cutoff,now)
+   :await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.fold,c.payload FROM parallel_cases c WHERE c.created_at>=? AND c.created_at>=? AND c.created_at<=? AND (c.created_at>? OR (c.created_at=? AND c.id>?)) AND NOT EXISTS(SELECT 1 FROM parallel_outcomes o WHERE o.case_id=c.id) ORDER BY c.created_at,c.id LIMIT 300",activation,cutoff,now,lastCreated,lastCreated,lastId);
+  if(!cases.length)break;
+  registrationBatches++;
+  for(const c of cases){
   const p=JSON.parse(c.payload),features=lrFeatures(p);
   const valid=prior&&Date.parse(prior.trained_at)<Date.parse(c.created_at);
   const payload={case_id:c.id,symbol:c.symbol,case_created_at:c.created_at,fold:c.fold,predicted_at:now,input_as_of:c.created_at,features,model_id:valid?prior.id:'untrained-baseline',probability:valid?lrSigmoid(prior.weights.reduce((s,w,i)=>s+w*features[i],0)):null,reference_probability:Number.isFinite(p.reference_probability)?p.reference_probability:null,policy_id:lrPolicy.id,real_trade:false};
   const out=await env.DB.prepare('INSERT OR IGNORE INTO prod_settings VALUES (?,?)').bind('lr:prediction:'+c.id,JSON.stringify(payload)).run();
   if((out.meta?.changes??out.changes)===1){predicted++;if(!valid)untrained++}
+  }
+  const last=cases[cases.length-1];lastCreated=last.created_at;lastId=last.id;
+  if(cases.length<300)break;
  }
  const outcomes=await lrAll(env,"SELECT c.id,c.symbol,c.created_at,c.fold,c.payload,o.created_at outcome_at,o.payload outcome FROM parallel_cases c JOIN parallel_outcomes o ON o.case_id=c.id WHERE c.fold='training' AND o.created_at<=? ORDER BY o.created_at,c.id",now);
  const training=outcomes.filter(x=>Date.parse(x.created_at)<Date.parse(x.outcome_at)&&Date.parse(x.outcome_at)<=Date.parse(now)).map(x=>({case_id:x.id,symbol:x.symbol,cohort:x.created_at.slice(0,10),features:lrFeatures(JSON.parse(x.payload)),y:JSON.parse(x.outcome).y})).filter(x=>x.y===0||x.y===1);
@@ -62,7 +74,7 @@ export async function lrCycle(env,now=new Date().toISOString()){
    trained=(insert.meta?.changes??insert.changes)===1;modelId=id;
   }
  }
- return {state:'completed',activation,training_n:training.length,training_quality:lrTrainingQuality(training),trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,notice:'Only cases first recorded at or after pre-registered activation and within ten minutes; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
+ return {state:'completed',activation,training_n:training.length,training_quality:lrTrainingQuality(training),trained,model_id:modelId,predictions_registered:predicted,untrained_baselines:untrained,registration_batches:registrationBatches,notice:'Only cases first recorded at or after pre-registered activation and within ten minutes; training uses matured training fold only; no backfill, retrospective score or automatic promotion'};
 }
 // Paired, strictly prospective challenger/reference scoring. Never merge
 // different model versions into a single claim of predictive improvement.
