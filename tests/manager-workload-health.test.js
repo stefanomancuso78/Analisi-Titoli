@@ -34,3 +34,20 @@ test('manager panel separates ready semantic queue from pending research evidenc
  assert.match(MANAGER_STATUS_UI,/Portafogli da ricalcolare/);
  db.close();
 });
+
+
+test('manager reports an expired semantic reader lease as recoverable instead of running',async()=>{
+ const env=fixture(),db=env.sqlite,runId='reader:2026-11-20T12:45';
+ db.prepare('INSERT INTO prod_settings VALUES (?,?)').run('semantic_reader_last',JSON.stringify({run_id:runId,state:'running',started_at:'2026-11-20T12:44:24.898Z'}));
+ db.prepare('INSERT INTO prod_leases VALUES (?,?,?)').run('semantic_reader',runId,Date.now()-1);
+ let r=await managerStatus(env);
+ assert.equal(r.semantic_reader.state,'expired');
+ assert.equal(r.semantic_reader.lease_active,false);
+ assert.equal(r.semantic_reader.recovery,'safe_to_reacquire');
+ db.prepare("UPDATE prod_leases SET expires_at=? WHERE key='semantic_reader'").run(Date.now()+60000);
+ r=await managerStatus(env);
+ assert.equal(r.semantic_reader.state,'running');
+ assert.equal(r.semantic_reader.lease_active,true);
+ assert.equal(r.semantic_reader.recovery,undefined);
+ db.close();
+});
