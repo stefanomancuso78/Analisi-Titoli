@@ -162,7 +162,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.backup_recovery_export){if(env.REQUEST_ROLE!=='owner')throw Error('Export ripristino riservato al proprietario');return exRecoveryExport(env,a.backup_recovery_export)}
  if(name==='list_research'&&a.performance_portfolios)return pcPortfolio(env,simPrincipal(req),a.portfolio_id||null);
  if(name==='list_research'&&a.performance_stock){if(!/^[A-Z0-9.\-]{1,30}$/.test(a.performance_stock))throw Error('Simbolo non valido');return pcStock(env,a.performance_stock)}
- if(name==='list_research'&&a.performance_status)return prView(env,await pcGroups(env),await parallelStatus(env));
+ if(name==='list_research'&&a.performance_status)return prView(env,await pcGroups(env),await parallelStatus(env),new Date().toISOString(),await t4Status(env));
  if(name==='list_research'&&a.changes_status)return changesStatus(env,simPrincipal(req),a.since||null);
  if(name==='list_research'&&a.ui_status)return {version:104,tests_navigation:HTML.includes('href="#test"'),tooltip_css:HTML.slice(HTML.indexOf('<style>'),HTML.indexOf('</style>')).includes('#product-tooltip{position:fixed'),prominent_entry:HTML.includes('class="product-entry"'),default_workspace:'test'};
  if(name==='list_research'&&a.news_status)return {...await nwStatus(env),controls:await ncStatus(env)};
@@ -390,7 +390,7 @@ export default {async fetch(req,env){
  if(url.pathname==='/api/changes'&&req.method==='GET'){try{return json(await changesStatus(env,simPrincipal(req),url.searchParams.get('since')))}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/manager-status'&&req.method==='GET')return json(await managerStatus(env));
  if(url.pathname==='/api/source-health'&&req.method==='GET')return json(await shStatus(env));
- if(url.pathname==='/api/performance'&&req.method==='GET')return json(await prView(env,await pcGroups(env),await parallelStatus(env)));
+ if(url.pathname==='/api/performance'&&req.method==='GET')return json(await prView(env,await pcGroups(env),await parallelStatus(env),new Date().toISOString(),await t4Status(env)));
  if(url.pathname==='/api/performance/portfolios'&&req.method==='GET'){const value=await pcPortfolio(env,simPrincipal(req),url.searchParams.get('id'));return json(value,value.status||200)}
  if(url.pathname==='/api/performance/stock'&&req.method==='GET'){const symbol=url.searchParams.get('symbol');if(!/^[A-Z0-9.\-]{1,30}$/.test(symbol||''))return json({error:'Simbolo non valido'},400);const value=await pcStock(env,symbol);return json(value,value.status||200)}
  if(url.pathname==='/api/capital'&&req.method==='GET')return json(await cpStatus(env,fxFor));

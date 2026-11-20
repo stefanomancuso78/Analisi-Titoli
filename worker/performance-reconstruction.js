@@ -1,4 +1,5 @@
 // Read-only retrospective valuation. Never inserts historical performance observations.
+import {tiView} from './test4-interim.js';
 import {exActionValue,exSplitSuspect} from './experiment.js';
 const prHost=u=>{try{return new URL(u).hostname}catch{return ''}};
 export function prReturn(c,quotes,actions,day,computedAt){
@@ -34,8 +35,8 @@ export function prReconstruct(groups,tests,quotes,actions,computedAt=new Date().
   return {...group,reconstruction_points:points};
  });
 }
-export async function prView(env,observed,parallel,computedAt=new Date().toISOString()){
+export async function prView(env,observed,parallel,computedAt=new Date().toISOString(),test4=null){
  const all=async sql=>(await env.DB.prepare(sql).all()).results||[];
  const quotes=await all('SELECT * FROM market_closes ORDER BY recorded_at'),actions=(await all('SELECT * FROM ex_actions')).map(r=>({...r,...JSON.parse(r.payload)}));
- return {...observed,groups:prReconstruct(observed.groups,parallel.tests,quotes,actions,computedAt),reconstruction:{computed_at:computedAt,kind:'retrospective_from_archived_closes',notice:'Linee continue: osservazioni registrate. Ricostruzione a tratteggio: calcolata oggi con chiusure archiviate, anche acquisite successivamente. Non è una rilevazione effettuata allora, né prova predittiva. Date, fonti e denominatori distinti; nessuna interpolazione o modifica dello storico.'}};
+ return {...observed,test4_interim:await tiView(env,test4,quotes,actions,computedAt),groups:prReconstruct(observed.groups,parallel.tests,quotes,actions,computedAt),reconstruction:{computed_at:computedAt,kind:'retrospective_from_archived_closes',notice:'Linee continue: osservazioni registrate. Ricostruzione a tratteggio: calcolata oggi con chiusure archiviate, anche acquisite successivamente. Non è una rilevazione effettuata allora, né prova predittiva. Date, fonti e denominatori distinti; nessuna interpolazione o modifica dello storico.'}};
 }
