@@ -42,3 +42,11 @@ test('real cycle snapshots only future cases; repeated cycles are idempotent and
  const status=await t4Status(e);assert.equal(status.protocol.integrity,true);assert.equal(status.metrics.selected,1)});
 test('Test 4 endpoint stays protected by existing authentication',async()=>{const e=env();const unauth=await worker.fetch(new Request('https://example.org/api/test4'),e);assert.equal(unauth.status,401);
  const auth=await worker.fetch(new Request('https://example.org/api/test4',{headers:{'oai-authenticated-user-email':'owner@example.com'}}),e);assert.equal(auth.status,200);const d=await auth.json();assert.equal(d.state,'not_started')});
+
+test('read-only Test 4 diagnostics expose actual registration, entry and matched benchmark without altering ledgers',async()=>{
+ const e=env();await t4Ensure(e,'2026-11-17T12:00:00.000Z');const registered='2026-11-18T12:00:00.000Z',decision=t4Decide(source,payload,registered),entry={date:'2026-11-19',asset_close:100,asset_source:host,benchmark_close:200,benchmark_source:benchmark,deadline:'2026-12-19'};
+ await e.DB.prepare('INSERT INTO t4_cases VALUES (?,?,?,?,?,?,?)').bind('case-diagnostic',source.id,source.symbol,pub,registered,1,JSON.stringify(decision)).run();
+ await e.DB.prepare('INSERT INTO t4_entries VALUES (?,?,?)').bind('case-diagnostic','2026-11-20T01:00:00.000Z',JSON.stringify(entry)).run();
+ const snapshot=()=>JSON.stringify(['t4_protocols','t4_cases','t4_entries','t4_outcomes'].map(t=>e.sqlite.prepare('SELECT * FROM '+t).all()));const before=snapshot(),status=await t4Status(e),c=status.recent[0];
+ assert.equal(c.registered_at,registered);assert.equal(c.entry_recorded_at,'2026-11-20T01:00:00.000Z');assert.equal(c.entry_date,'2026-11-19');assert.equal(c.deadline,'2026-12-19');assert.equal(c.entry_asset_close,100);assert.equal(c.benchmark_entry_close,200);assert.equal(c.benchmark_entry_date,c.entry_date);assert.equal(c.net_return,null);assert.equal(status.protocol.integrity,true);assert.equal(snapshot(),before);
+});

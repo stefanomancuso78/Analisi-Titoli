@@ -158,11 +158,11 @@ export async function t4Status(env){
  if(!row)return {state:'not_started',protocol:null,metrics:t4Metrics([]),notice:'Avviare Test 4 solo tramite ciclo autenticato; nessun dato retrodatato'};
  const expected=await t4Hash(JSON.stringify({...t4Rules,implementation_hash:await t4Hash([t4Decide.toString(),t4Assess.toString(),t4Series.toString(),pdPredict.toString(),exActionValue.toString(),exSplitSuspect.toString()].join('\n'))}));
  const integrity=row.digest===await t4Hash(row.payload)&&row.digest===expected;
- const result=await t4All(env,'SELECT c.*,e.payload entry,o.payload outcome FROM t4_cases c LEFT JOIN t4_entries e ON e.case_id=c.id LEFT JOIN t4_outcomes o ON o.case_id=c.id ORDER BY c.published_at DESC');
- const cases=result.map(r=>({id:r.id,symbol:r.symbol,p:JSON.parse(r.payload),entry:r.entry?JSON.parse(r.entry):null,outcome:r.outcome?JSON.parse(r.outcome):null}));
+ const result=await t4All(env,'SELECT c.*,e.created_at entry_recorded_at,e.payload entry,o.payload outcome FROM t4_cases c LEFT JOIN t4_entries e ON e.case_id=c.id LEFT JOIN t4_outcomes o ON o.case_id=c.id ORDER BY c.published_at DESC');
+ const cases=result.map(r=>({id:r.id,symbol:r.symbol,registered_at:r.recorded_at,entry_recorded_at:r.entry_recorded_at||null,p:JSON.parse(r.payload),entry:r.entry?JSON.parse(r.entry):null,outcome:r.outcome?JSON.parse(r.outcome):null}));
  return {state:integrity?'running':'protocol_review',protocol:{...JSON.parse(row.payload),created_at:row.created_at,integrity,payload_integrity:row.digest===await t4Hash(row.payload),implementation_compatible:row.digest===expected},
-  metrics:t4Metrics(cases),recent:cases.slice(0,20).map(c=>({id:c.id,symbol:c.symbol,published_at:c.p.published_at,selected:c.p.selected,
-   eligible:c.p.eligible,excluded_reason:c.p.excluded_reason,entry_date:c.entry?.date||null,
+  metrics:t4Metrics(cases),recent:cases.slice(0,20).map(c=>({id:c.id,symbol:c.symbol,published_at:c.p.published_at,registered_at:c.registered_at,entry_recorded_at:c.entry_recorded_at,selected:c.p.selected,
+   eligible:c.p.eligible,excluded_reason:c.p.excluded_reason,entry_date:c.entry?.date||null,deadline:c.entry?.deadline||null,entry_asset_close:c.entry?.asset_close??null,entry_asset_source:c.entry?.asset_source||null,benchmark_entry_date:c.entry?.date||null,benchmark_entry_close:c.entry?.benchmark_close??null,benchmark_entry_source:c.entry?.benchmark_source||null,
    exit_date:c.outcome?.exit_date||null,net_return:c.outcome?.net_return??null,alpha:c.outcome?.alpha??null,
    outcome:c.outcome?.kind||null})),notice:'Nuove decisioni prospettiche, controllo SPY sulle stesse date; nessuna modifica ai test storici. Nessuna conclusione finché le coorti non maturano.'};
 }
