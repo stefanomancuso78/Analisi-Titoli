@@ -44,3 +44,5 @@ test('Business Wire fallback accepts only exact unique issuer announcements from
  await assert.rejects(()=>gAggregatorEvents(e,{...source,url:'https://fake.example/rss'}),/Unapproved feed host/);
  }finally{globalThis.fetch=previous;e.sqlite.close();}
 });
+
+test('short graph evidence is not marked as qualified full text',async()=>{const env=graphDB();for(const e of entities)await env.DB.prepare('INSERT INTO prod_entities VALUES (?,?,?,?,?,?)').bind(e.symbol,e.name,'AI',JSON.stringify(e.aliases),e.proof_url,new Date().toISOString()).run();const doc={text:sample,url:'https://investors.palantir.com/news-release-details/qualification-test',title:'Qualification test',published_at:'2026-11-01T00:00:00.000Z'};await gSave(env,doc,{issuer:'PLTR',primary:true,source_id:'ir-PLTR'});const row=env.sqlite.prepare('SELECT payload FROM graph_documents WHERE url=?').get(doc.url);assert.equal(JSON.parse(row.payload).qualified_full_text,false);});
