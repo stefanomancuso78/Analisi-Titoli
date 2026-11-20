@@ -1,3 +1,4 @@
+import {prView} from './performance-reconstruction.js';
 import {pfAdvanceExisting,pfDiagnostic} from './performance-diagnostics.js';
 import {changesStatus,CHANGES_HTML,CHANGES_UI} from './changes.js';
 import {asScreen} from './acquisition-screen.js';
@@ -161,7 +162,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.backup_recovery_export){if(env.REQUEST_ROLE!=='owner')throw Error('Export ripristino riservato al proprietario');return exRecoveryExport(env,a.backup_recovery_export)}
  if(name==='list_research'&&a.performance_portfolios)return pcPortfolio(env,simPrincipal(req),a.portfolio_id||null);
  if(name==='list_research'&&a.performance_stock){if(!/^[A-Z0-9.\-]{1,30}$/.test(a.performance_stock))throw Error('Simbolo non valido');return pcStock(env,a.performance_stock)}
- if(name==='list_research'&&a.performance_status)return pcGroups(env);
+ if(name==='list_research'&&a.performance_status)return prView(env,await pcGroups(env),await parallelStatus(env));
  if(name==='list_research'&&a.changes_status)return changesStatus(env,simPrincipal(req),a.since||null);
  if(name==='list_research'&&a.ui_status)return {version:104,tests_navigation:HTML.includes('href="#test"'),tooltip_css:HTML.slice(HTML.indexOf('<style>'),HTML.indexOf('</style>')).includes('#product-tooltip{position:fixed'),prominent_entry:HTML.includes('class="product-entry"'),default_workspace:'test'};
  if(name==='list_research'&&a.news_status)return {...await nwStatus(env),controls:await ncStatus(env)};
@@ -204,6 +205,7 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.news_assessment)return nwAssess(env,a.news_assessment);
  if(name==='refresh_pattern_calibration'&&a.news_ingest)return nwIngest(env,a.news_ingest);
  if(name==='refresh_pattern_calibration'&&a.flow_cycle)return {triage:await flTriage(env),capture:await flCapture(env)};
+ if(name==='refresh_pattern_calibration'&&a.performance_capture_only)return pcCapture(env,await parallelStatus(env),await spStatus(env),new Date().toISOString(),await t4Status(env),{instant:true});
  if(name==='refresh_pattern_calibration'&&a.performance_cycle){const before=await parallelStatus(env);const entry_advancement=await pfAdvanceExisting(env,undefined,{'study-v1':before.tests[0].integrity,'semantic-study-v2':before.tests[1].integrity,parallel:before.tests[2].integrity});const performance=await pcCapture(env,entry_advancement.advanced?await parallelStatus(env):before,await spStatus(env),new Date().toISOString(),await t4Status(env));return {...performance,entry_advancement,market_reaction:await mrCycle(env),flow:await flCapture(env)}}
  if(name==='refresh_pattern_calibration'&&a.market_reaction_cycle)return mrCycle(env);
  if(name==='list_research'&&a.market_reaction_status)return mrStatus(env);
@@ -388,7 +390,7 @@ export default {async fetch(req,env){
  if(url.pathname==='/api/changes'&&req.method==='GET'){try{return json(await changesStatus(env,simPrincipal(req),url.searchParams.get('since')))}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/manager-status'&&req.method==='GET')return json(await managerStatus(env));
  if(url.pathname==='/api/source-health'&&req.method==='GET')return json(await shStatus(env));
- if(url.pathname==='/api/performance'&&req.method==='GET')return json(await pcGroups(env));
+ if(url.pathname==='/api/performance'&&req.method==='GET')return json(await prView(env,await pcGroups(env),await parallelStatus(env)));
  if(url.pathname==='/api/performance/portfolios'&&req.method==='GET'){const value=await pcPortfolio(env,simPrincipal(req),url.searchParams.get('id'));return json(value,value.status||200)}
  if(url.pathname==='/api/performance/stock'&&req.method==='GET'){const symbol=url.searchParams.get('symbol');if(!/^[A-Z0-9.\-]{1,30}$/.test(symbol||''))return json({error:'Simbolo non valido'},400);const value=await pcStock(env,symbol);return json(value,value.status||200)}
  if(url.pathname==='/api/capital'&&req.method==='GET')return json(await cpStatus(env,fxFor));
