@@ -75,3 +75,29 @@ test('legacy short-primary completions are visible to audit without reclassifyin
  assert.equal(e.sqlite.prepare("SELECT COUNT(*) n FROM graph_documents").get().n,3);
  e.sqlite.close();
 });
+
+test('alternative audit categorizes blocked and short primary acquisitions without changing queue state',async()=>{
+ const e=fixture();
+ job(e,'blocked','https://issuer.org/blocked','Acme report');
+ job(e,'short','https://issuer.org/short','Acme report');
+ e.sqlite.prepare("UPDATE graph_jobs SET state='needs_alternative',payload=json_set(payload,'$.error','HTTP 403') WHERE id='blocked'").run();
+ e.sqlite.prepare("UPDATE graph_jobs SET state='needs_alternative',payload=json_set(payload,'$.resolution','short_primary_html_needs_full_text') WHERE id='short'").run();
+ const before=e.sqlite.prepare("SELECT id,state,payload FROM graph_jobs ORDER BY id").all();
+ const audit=await aqAudit(e);
+ assert.equal(audit.alternatives.count,2);
+ assert.equal(audit.alternatives.reasons.access_denied,1);
+ assert.equal(audit.alternatives.reasons.insufficient_primary_text,1);
+ assert.equal(audit.alternatives.examples.length,2);
+ assert.deepEqual(e.sqlite.prepare("SELECT id,state,payload FROM graph_jobs ORDER BY id").all(),before);
+ e.sqlite.close();
+});
+
+test('historical audit includes explicitly unqualified long primary documents',async()=>{
+ const e=fixture();job(e,'unqualified','https://issuer.org/unqualified','Acme report');
+ e.sqlite.prepare('INSERT INTO graph_documents VALUES (?,?,?,?,?,?,?)').run('doc-unqualified','https://issuer.org/unqualified','hash-unqualified','Issuer document',null,new Date().toISOString(),JSON.stringify({issuer:'AAA',primary:true,extraction_basis:'document_text',qualified_full_text:false,text:'X'.repeat(1000)}));
+ e.sqlite.prepare("UPDATE graph_jobs SET state='completed',payload=json_set(payload,'$.document_id','doc-unqualified') WHERE id='unqualified'").run();
+ const audit=await aqAudit(e);
+ assert.equal(audit.historical_short_primary_completions.count,1);
+ assert.equal(audit.historical_short_primary_completions.examples[0].id,'unqualified');
+ e.sqlite.close();
+});
