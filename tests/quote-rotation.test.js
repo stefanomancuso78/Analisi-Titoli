@@ -27,7 +27,7 @@ test('quote sweep deduplicates, validates and preserves bounded source usage',()
 test('Test 4 quote sweep uses hourly gate under the independent scheduler and requests only a bounded batch',()=>{
  const code=readFileSync('worker/index.js','utf8');
  assert.match(code,/Date\.now\(\)-Date\.parse\(last\.value\)<3600000/);
- assert.match(code,/haApi\(req,env,\{market:\(\)=>t4QuoteSweep\(req,env\)\}\)/);
+ assert.match(code,/haApi\(req,env,\{market:\(\)=>t4QuoteSweep\(req,\{\.\.\.env,REQUEST_ROLE:'owner'\}\)\}\)/);
  assert.match(code,/quoteSweepSymbols\(rows\.map\(x=>x\.symbol\),now,4,3600000\)/);
  assert.match(code,/WHERE c\.eligible=1 AND o\.case_id IS NULL/);
 });
