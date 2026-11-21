@@ -14,7 +14,7 @@ export async function modelResponse(response,onProgress=async()=>{}){
 }
 export const fields=['event_summary','economic_link','company_exposure','expectations','risks','invalidation','timeframe_reason','materiality_reason','alternative_explanation'];
 export function parseModel(content){const s=String(content||'').replace(/<think>[\s\S]*?<\/think>/g,'').trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'');const value=JSON.parse(s);if(!value||Array.isArray(value)||typeof value!=='object')throw Error('Model did not produce a JSON object');return value;}
-export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.STOKIQ_WORKER_TOKEN,fetcher=fetch,heartbeatOnly=false,budgetMs=28*60000}={}){
+export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.STOKIQ_WORKER_TOKEN,fetcher=fetch,heartbeatOnly=false,targetAnalysisId=process.env.RECOVERY_ANALYSIS_ID||null,budgetMs=28*60000}={}){
  let identity=null,identityAt=0;
  const authorization=async()=>{
   if(token)return token;
@@ -41,8 +41,9 @@ export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.S
  };
  let reviewed=0,chunks=0,acquired=0,acquiredReady=0,synthesisFields=0;
  while(Date.now()-start<budgetMs-720000){
-  const c=await request({operation:'claim'});if(c.state==='busy'||c.state==='provider_backoff')break;
+  const c=await request({operation:'claim',...(targetAnalysisId?{target_analysis_id:targetAnalysisId}:{})});if(c.state==='busy'||c.state==='provider_backoff'){if(targetAnalysisId&&c.reason!=='validated_batch_complete'&&Date.now()-start<budgetMs-720000){await heartbeat('waiting_review_lease');await new Promise(r=>setTimeout(r,10000));continue;}break;}
   if(c.state==='no_reviewable_evidence'){
+   if(targetAnalysisId)break;
    if(acquired>=3)break;
    const result=await request({operation:'acquire'});acquired++;acquiredReady+=(result.results||[]).filter(r=>r.state==='evidence_ready').length;
    if(['review_priority','backoff','busy','not_due'].includes(result.state))break;
@@ -84,6 +85,6 @@ export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.S
   finally{currentLease=null;if(!completed)await request({...identity,operation:'release'}).catch(()=>{});}
   if(!completed)break;
  }
- await heartbeat(reviewed?'validated_revision':(chunks+synthesisFields)>0?'partial_progress':'no_progress');const status=await request({operation:'status'});const continuation=(reviewed+chunks+acquiredReady+synthesisFields)>0&&status.policy.active>0&&!status.alerts.includes('provider_backoff');if(process.env.GITHUB_OUTPUT)appendFileSync(process.env.GITHUB_OUTPUT,'continue_recovery='+String(continuation)+'\n');console.log(JSON.stringify({reviewed,chunks,synthesis_fields:synthesisFields,acquired,counts:status.counts,alerts:status.alerts,duration_ms:Date.now()-start}));return {reviewed,chunks,synthesisFields,acquired,status};
+ await heartbeat(reviewed?'validated_revision':(chunks+synthesisFields)>0?'partial_progress':'no_progress');const status=await request({operation:'status'});const continuation=(reviewed+chunks+acquiredReady+synthesisFields)>0&&status.policy.active>0&&!status.alerts.includes('provider_backoff')&&(!targetAnalysisId||reviewed===0);if(process.env.GITHUB_OUTPUT)appendFileSync(process.env.GITHUB_OUTPUT,'continue_recovery='+String(continuation)+'\n');console.log(JSON.stringify({reviewed,chunks,synthesis_fields:synthesisFields,acquired,counts:status.counts,alerts:status.alerts,duration_ms:Date.now()-start}));return {reviewed,chunks,synthesisFields,acquired,status};
 }
 if(process.argv[1]===fileURLToPath(import.meta.url)){runWorker({heartbeatOnly:process.argv.includes('--heartbeat')||process.argv.includes('--finalize')}).catch(e=>{console.error('Autonomous worker failed:',e.message);process.exitCode=1;});}
