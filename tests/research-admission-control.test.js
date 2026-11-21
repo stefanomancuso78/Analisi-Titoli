@@ -16,11 +16,14 @@ function assessment(db,n,decision='research_only',kind='high'){
  db.prepare('INSERT INTO semantic_analyses VALUES (?,?,?,?,?,?,?)').run(id,doc,'SYM'+n,at,'test',decision,JSON.stringify(data));
  return id;
 }
-test('75% backlog reservation: new admissions capped at 12/day in drain mode, 24/day otherwise',()=>{
- assert.deepEqual(rfPlanBudget(718,0),{mode:'backlog_drain',daily_limit:12,remaining:12,backlog_reserved_share:0.75});
+test('admissions pause above 100, restart cautiously below 100 and preserve daily caps',()=>{
+ assert.deepEqual(rfPlanBudget(718,0),{mode:'admission_paused',daily_limit:0,remaining:0,backlog_reserved_share:1});
  assert.equal(rfPlanBudget(718,12).remaining,0);
  assert.equal(rfPlanBudget(5,0).daily_limit,24);
- assert.equal(rfPlanBudget(100,23).remaining,1);
+ assert.equal(rfPlanBudget(99,0).daily_limit,6);
+ assert.equal(rfPlanBudget(60,5).remaining,1);
+ assert.equal(rfPlanBudget(59,24).remaining,0);
+ assert.equal(rfPlanBudget(100,23).remaining,0);
 });
 test('research planner does not delete backlog and defers routine cases while congested',async()=>{
  const env=fixture(),db=env.sqlite;
@@ -30,13 +33,13 @@ test('research planner does not delete backlog and defers routine cases while co
  assessment(db,49,'research_only','low');
  const before=db.prepare('SELECT COUNT(*) n FROM research_jobs').get().n;
  const first=await rfPlan(env);
- assert.equal(first.mode,'backlog_drain');assert.equal(first.daily_limit,12);assert.equal(first.created,12);
+ assert.equal(first.mode,'admission_paused');assert.equal(first.daily_limit,0);assert.equal(first.created,0);
  assert.equal(first.deferred,true);
  assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs WHERE analysis_id='a49'").get().n,0);
- assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs").get().n,before+12);
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs").get().n,before);
  const second=await rfPlan(env);
- assert.equal(second.created,0);assert.equal(second.new_today,12);
- assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs WHERE state='pending'").get().n,before+12);
+ assert.equal(second.created,0);assert.equal(second.new_today,0);
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs WHERE state='pending'").get().n,before);
  const protocol=await rfEnsure(env);assert.equal(protocol.integrity,true);
  db.close();
 });
