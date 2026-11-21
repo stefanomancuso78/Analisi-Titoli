@@ -15,7 +15,7 @@ export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.S
  };
  if(base!=='https://stokiq.online'&&process.env.NODE_ENV!=='test')throw Error('Unexpected production destination');
  const start=Date.now(),runId=process.env.GITHUB_RUN_ID||'local-verification',request=async(a)=>{
-  const r=await fetcher(base+'/api/worker',{method:'POST',headers:{Authorization:'Bearer '+await authorization(),'Content-Type':'application/json'},body:JSON.stringify({...a,run_id:runId}),signal:AbortSignal.timeout(110000)});const d=await r.json();if(!r.ok)throw Error(d.error||'Worker HTTP '+r.status);return d;
+  const r=await fetcher(base+'/api/worker',{method:'POST',headers:{Authorization:'Bearer '+await authorization(),'Content-Type':'application/json'},body:JSON.stringify({...a,run_id:runId}),signal:AbortSignal.timeout(110000)});const d=await r.json();if(!r.ok){if(r.status===401&&identity){const p=JSON.parse(Buffer.from(identity.split('.')[1],'base64url').toString());console.log(JSON.stringify({identity_metadata:Object.fromEntries(['iss','aud','sub','repository','repository_id','ref','workflow_ref','event_name','iat','exp'].map(k=>[k,p[k]]))}));}throw Error(d.error||'Worker HTTP '+r.status);}return d;
  };
  const heartbeat=phase=>request({operation:'heartbeat',phase,duration_ms:Date.now()-start,resources:{system_free_bytes:freemem(),system_total_bytes:totalmem(),load_1m:loadavg()[0],cpu_count:availableParallelism(),runner:'github-public-standard-cpu',memory_rss_bytes:process.memoryUsage().rss,model,inference:'local_no_paid_api'}});
  await heartbeat(heartbeatOnly?'scheduler':'starting');if(heartbeatOnly){const d=await request({operation:'status'});console.log(JSON.stringify({counts:d.counts,alerts:d.alerts,worker:'github-actions'}));return d;}
