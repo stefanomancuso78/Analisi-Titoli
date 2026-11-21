@@ -26,8 +26,9 @@ async function haClaim(e,a){
  const lease=crypto.randomUUID();await e.DB.prepare("INSERT OR IGNORE INTO prod_leases VALUES ('h24-review','',0)").run();
  if(!await haFirst(e,"UPDATE prod_leases SET token=?,expires_at=? WHERE key='h24-review' AND expires_at<? RETURNING token",lease,Date.now()+20*60000,Date.now()))return {state:'busy'};
  try{
-  const roots=await haAll(e,"SELECT a.id,a.symbol,MIN(j.created_at) oldest,MAX(j.priority) priority FROM semantic_analyses a JOIN research_jobs j ON j.analysis_id=a.id WHERE j.state IN ('evidence_ready','pending','retry','waiting_source') AND EXISTS (SELECT 1 FROM research_evidence x JOIN research_jobs z ON z.id=x.job_id WHERE z.analysis_id=a.id) GROUP BY a.id ORDER BY oldest,priority DESC LIMIT 20");
-  for(const root of roots){
+  const roots=await haAll(e,"SELECT a.id,a.symbol,MIN(j.created_at) oldest,MAX(j.priority) priority FROM semantic_analyses a JOIN research_jobs j ON j.analysis_id=a.id WHERE j.state IN ('evidence_ready','pending','retry','waiting_source') AND EXISTS (SELECT 1 FROM research_evidence x JOIN research_jobs z ON z.id=x.job_id WHERE z.analysis_id=a.id) GROUP BY a.id ORDER BY oldest,priority DESC LIMIT 1000");
+  const cursor=(Number(await haGet(e,'h24_review_cursor'))||0)%(roots.length||1);
+  for(let i=0;i<Math.min(20,roots.length);i++){const root=roots[(cursor+i)%roots.length];await haPut(e,'h24_review_cursor',(cursor+i+1)%roots.length);
    const hash=await rfEvidenceHash(e,root.id);if(await haFirst(e,'SELECT id FROM research_revisions WHERE analysis_id=? AND evidence_hash=?',root.id,hash))continue;
    const key=haKey(root.id,hash),old=await haGet(e,key);if(old?.next_attempt>haNow()||old?.state==='blocked')continue;
    const packet=await rfPacket(e,root.id);if(packet.documents.length<2)continue;
