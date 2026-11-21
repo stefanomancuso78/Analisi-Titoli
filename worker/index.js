@@ -130,17 +130,20 @@ const specs=[
 // Price failures stay visible; no replacement quote, credential, paid service or invented price.
 async function t4QuoteSweep(req,env){
  const now=new Date().toISOString(),last=await env.DB.prepare("SELECT value FROM prod_settings WHERE key='test4_quote_attempt'").first();
- if(last&&Date.now()-Date.parse(last.value)<18*3600000)return {state:'not_due',last_attempt:last.value};
+ if(last&&Date.now()-Date.parse(last.value)<3600000)return {state:'not_due',last_attempt:last.value};
+ const lease=crypto.randomUUID();await env.DB.prepare("INSERT OR IGNORE INTO prod_leases VALUES ('h24-market','',0)").run();if(!await env.DB.prepare("UPDATE prod_leases SET token=?,expires_at=? WHERE key='h24-market' AND expires_at<? RETURNING token").bind(lease,Date.now()+180000,Date.now()).first())return {state:'busy'};
+ try{const check=await env.DB.prepare("SELECT value FROM prod_settings WHERE key='test4_quote_attempt'").first();if(check&&Date.now()-Date.parse(check.value)<3600000)return {state:'not_due',last_attempt:check.value};
  await env.DB.prepare("INSERT INTO prod_settings (key,value) VALUES ('test4_quote_attempt',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(now).run();
- const results=[];
+const results=[];
  for(const symbol of ['SPY','XLK']){
   try{const outcome=await call('refresh_market_comparisons',{benchmark_symbol:symbol,limit:1},req,env);results.push({symbol,results:outcome.results||[],state:outcome.status})}
   catch(e){results.push({symbol,state:'failed',error:String(e.message).slice(0,180)})}
  }
  const rows=(await env.DB.prepare("SELECT DISTINCT c.symbol FROM t4_cases c LEFT JOIN t4_outcomes o ON o.case_id=c.id WHERE c.eligible=1 AND o.case_id IS NULL ORDER BY c.symbol").all()).results||[];
- const symbols=quoteSweepSymbols(rows.map(x=>x.symbol),now,4);
+ const symbols=quoteSweepSymbols(rows.map(x=>x.symbol),now,4,3600000);
  if(symbols.length){try{const outcome=await call('refresh_market_comparisons',{symbols},req,env);results.push({symbols,results:outcome.results||[],state:outcome.status})}catch(e){results.push({symbols,state:'failed',error:String(e.message).slice(0,180)})}}
- return {state:results.some(x=>x.state==='failed'||x.state==='partial')?'partial':'completed',at:now,results};
+ const result={state:results.some(x=>x.state==='failed'||x.state==='partial')?'partial':'completed',at:now,results};await env.DB.prepare("INSERT INTO prod_settings VALUES ('h24_market_last',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(JSON.stringify(result)).run();return result;
+ }finally{await env.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-market' AND token=?").bind(lease).run();}
 }
 
 async function call(name,a,req,env){
@@ -345,7 +348,7 @@ async function publishExperiment(snapshots,req,env,now){
  return {published_at:now,experiment:'M1D-v0 — regola meccanica non calibrata',published,skipped};
 }
 export default {async fetch(req,env){
- try{const url=new URL(req.url);if(url.pathname==='/api/worker')return haApi(req,env);env={...env,REQUEST_ROLE:await pdRole(req,env)};
+ try{const url=new URL(req.url);if(url.pathname==='/api/worker')return haApi(req,env,{market:()=>t4QuoteSweep(req,env)});env={...env,REQUEST_ROLE:await pdRole(req,env)};
  if(url.pathname==='/stokiq-wordmark-v1.png'&&req.method==='GET')return new Response(Uint8Array.from(atob(WORDMARK_BASE64),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/png','Cache-Control':'public,max-age=31536000,immutable'}});
  if(url.pathname==='/stokiq-logo-v2.png'&&req.method==='GET')return new Response(Uint8Array.from(atob(LOGO_BASE64),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/png','Cache-Control':'public,max-age=31536000,immutable'}});
  if(url.pathname==='/unlock'&&req.method==='POST'){

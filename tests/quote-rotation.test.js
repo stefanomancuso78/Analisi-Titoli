@@ -24,9 +24,12 @@ test('quote sweep deduplicates, validates and preserves bounded source usage',()
  assert.throws(()=>quoteSweepSymbols(['VRTX'],'not a date'),/timestamp/);
 });
 
-test('Test 4 quote sweep still respects existing 18-hour gate and requests only a bounded batch',()=>{
+test('Test 4 quote sweep uses hourly gate under the independent scheduler and requests only a bounded batch',()=>{
  const code=readFileSync('worker/index.js','utf8');
- assert.match(code,/18\*3600000/);
- assert.match(code,/quoteSweepSymbols\(rows\.map\(x=>x\.symbol\),now,4\)/);
+ assert.match(code,/Date\.now\(\)-Date\.parse\(last\.value\)<3600000/);
+ assert.match(code,/haApi\(req,env,\{market:\(\)=>t4QuoteSweep\(req,env\)\}\)/);
+ assert.match(code,/quoteSweepSymbols\(rows\.map\(x=>x\.symbol\),now,4,3600000\)/);
  assert.match(code,/WHERE c\.eligible=1 AND o\.case_id IS NULL/);
 });
+
+test('hourly rotation covers every eligible open symbol within two scheduler hours',()=>{const seen=new Set();for(let h=0;h<2;h++)for(const s of quoteSweepSymbols(['AZN','HON','NXT','REGN','VRTX'],new Date((1000+h)*3600000).toISOString(),4,3600000))seen.add(s);for(const s of ['AZN','HON','NXT','REGN','VRTX'])assert.ok(seen.has(s),s);});
