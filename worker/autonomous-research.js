@@ -5,6 +5,7 @@ const haHash=async v=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-
 const haGet=async(e,k)=>{const r=await haFirst(e,'SELECT value FROM prod_settings WHERE key=?',k);return r?JSON.parse(r.value):null};
 const haPut=(e,k,v)=>e.DB.prepare('INSERT INTO prod_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k,JSON.stringify(v)).run();
 const haEvent=(e,kind,p)=>e.DB.prepare('INSERT INTO operational_events VALUES (?,?,?,?)').bind(crypto.randomUUID(),haNow(),'h24_'+kind,JSON.stringify(p)).run();
+export const haTransportFailure=message=>/Local model HTTP|fetch failed|timeout|timed out|memory pressure/i.test(String(message||''));
 const haKey=(id,hash)=>'h24_dossier:'+id+':'+hash;
 export function haPolicy(counts,created,reviewed){const active=['pending','retry','waiting_source','evidence_ready','running'].reduce((n,s)=>n+(counts[s]||0),0);return {mode:active>=100?'BACKLOG_RECOVERY':'STEADY_STATE',active,intake_allowed:active<100&&created<=reviewed,chunk_chars:10000,max_review_retries:3,model:'Qwen3-4B-Q4_K_M',paid_inference:false};}
 export async function haStatus(e){
@@ -22,7 +23,7 @@ export async function haStatus(e){
 async function haFence(e,a){const row=await haFirst(e,"SELECT * FROM prod_leases WHERE key='h24-review'");if(!row||row.token!==a.lease||row.expires_at<=Date.now())throw Error('Lease expired or superseded');const state=await haGet(e,haKey(a.analysis_id,a.evidence_hash));if(!state||state.lease!==a.lease)throw Error('Dossier lease mismatch');if(await rfEvidenceHash(e,a.analysis_id)!==a.evidence_hash)throw Error('Evidence changed; new complete review required');return state;}
 async function haNext(e,state){for(const d of state.documents){const done=state.notes.filter(n=>n.document_id===d.id).sort((a,b)=>a.offset-b.offset);let offset=0;for(const n of done){if(n.offset!==offset)break;offset=n.end}if(offset<d.text_length){const row=await haFirst(e,'SELECT payload FROM graph_documents WHERE id=?',d.id),text=JSON.parse(row.payload).text.slice(offset,offset+10000);return {document_id:d.id,title:d.title,offset,end:offset+text.length,text,text_hash:await haHash(text)};}}return null;}
 async function haClaim(e,a){
- const provider=await haGet(e,'h24_provider');if(provider?.next_attempt>haNow())return {state:'provider_backoff',next_attempt:provider.next_attempt};
+ const provider=await haGet(e,'h24_provider');if(provider?.next_attempt>haNow()&&haTransportFailure(provider.last_error))return {state:'provider_backoff',next_attempt:provider.next_attempt};
  const lease=crypto.randomUUID();await e.DB.prepare("INSERT OR IGNORE INTO prod_leases VALUES ('h24-review','',0)").run();
  if(!await haFirst(e,"UPDATE prod_leases SET token=?,expires_at=? WHERE key='h24-review' AND expires_at<? RETURNING token",lease,Date.now()+20*60000,Date.now()))return {state:'busy'};
  try{
@@ -68,7 +69,7 @@ export async function haOperation(e,a){
   await e.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-review' AND token=?").bind(a.lease).run();return result;
  }
  if(a.operation==='release'){
-  if(a.error){const previous=await haGet(e,'h24_provider'),failures=(previous?.failures||0)+1;await haPut(e,'h24_provider',{state:failures>=3?'circuit_open':'degraded',provider:'local_Qwen3_CPU',failures,at:haNow(),last_error:String(a.error).slice(0,200),next_attempt:failures>=3?new Date(Date.now()+15*60000).toISOString():null});state.attempts++;state.last_error=String(a.error).slice(0,300);state.state=state.attempts>=3?'blocked':'retry';state.next_attempt=new Date(Date.now()+Math.min(86400000,15*60000*2**state.attempts)).toISOString();await haEvent(e,'error',{at:haNow(),analysis_id:a.analysis_id,error:state.last_error,attempts:state.attempts});}
+  if(a.error){const previous=await haGet(e,'h24_provider'),failures=(haTransportFailure(previous?.last_error)?previous?.failures||0:0)+(haTransportFailure(a.error)?1:0);await haPut(e,'h24_provider',{state:failures>=3?'circuit_open':'degraded',provider:'local_Qwen3_CPU',failures,at:haNow(),last_error:String(a.error).slice(0,200),next_attempt:failures>=3?new Date(Date.now()+15*60000).toISOString():null});state.attempts++;state.last_error=String(a.error).slice(0,300);state.state=state.attempts>=3?'blocked':'retry';state.next_attempt=new Date(Date.now()+Math.min(86400000,15*60000*2**state.attempts)).toISOString();await haEvent(e,'error',{at:haNow(),analysis_id:a.analysis_id,error:state.last_error,attempts:state.attempts});}
   await haPut(e,key,state);await e.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-review' AND token=?").bind(a.lease).run();return {state:'released'};
  }
  throw Error('Unsupported bounded worker operation');
