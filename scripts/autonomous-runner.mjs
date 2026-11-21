@@ -1,5 +1,6 @@
 // Runs without ChatGPT or a paid inference API. Production text is never logged or uploaded.
 import {freemem,totalmem,loadavg,availableParallelism} from 'node:os';
+import {appendFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 const model='Qwen3-4B-Q4_K_M';
 export function sourceSegments(text){const result=[];let at=0;while(at<text.length){let end=Math.min(text.length,at+400);if(end<text.length){const space=text.lastIndexOf(' ',end-1);if(space>at+200)end=space+1;}result.push({id:result.length,text:text.slice(at,end)});at=end;}return result;}
@@ -20,7 +21,7 @@ export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.S
  const start=Date.now(),runId=(process.env.GITHUB_RUN_ID?process.env.GITHUB_RUN_ID+':'+(process.env.GITHUB_RUN_ATTEMPT||'1'):'local-verification'),request=async(a)=>{
   const r=await fetcher(base+'/api/worker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...a,run_id:runId,worker_identity:await authorization()}),signal:AbortSignal.timeout(110000)});const d=await r.json();if(!r.ok){if(r.status===401&&identity){const p=JSON.parse(Buffer.from(identity.split('.')[1],'base64url').toString());console.log(JSON.stringify({identity_metadata:Object.fromEntries(['iss','aud','sub','repository','repository_id','ref','workflow_ref','event_name','iat','exp'].map(k=>[k,p[k]]))}));}throw Error(d.error||'Worker HTTP '+r.status);}return d;
  };
- const heartbeat=phase=>request({operation:'heartbeat',phase,duration_ms:Date.now()-start,resources:{inference_usage:usage,system_free_bytes:freemem(),system_total_bytes:totalmem(),load_1m:loadavg()[0],cpu_count:availableParallelism(),runner:'github-public-standard-cpu',memory_rss_bytes:process.memoryUsage().rss,model,inference:'local_no_paid_api'}});
+ const heartbeat=phase=>request({operation:'heartbeat',phase,duration_ms:Date.now()-start,resources:{parent_run:process.env.PARENT_RUN||null,inference_usage:usage,system_free_bytes:freemem(),system_total_bytes:totalmem(),load_1m:loadavg()[0],cpu_count:availableParallelism(),runner:'github-public-standard-cpu',memory_rss_bytes:process.memoryUsage().rss,model,inference:'local_no_paid_api'}});
  await heartbeat(heartbeatOnly?(process.argv.includes('--finalize')?(process.env.H24_JOB_STATUS==='success'?'completed':'failed'):'scheduler'):'starting');if(heartbeatOnly){const d=await request({operation:'status'});console.log(JSON.stringify({counts:d.counts,alerts:d.alerts,worker:'github-actions'}));return d;}
  for(let i=0;i<90;i++){try{const r=await fetcher('http://127.0.0.1:8081/health',{signal:AbortSignal.timeout(2000)});if(r.ok)break;if(i===89)throw Error('Local model did not become ready')}catch(e){if(i===89)throw e}await new Promise(r=>setTimeout(r,2000));}
  const infer=async(system,user,max=1200,schema=null)=>{const inferenceStart=Date.now();
@@ -28,12 +29,12 @@ export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.S
   const r=await fetcher('http://127.0.0.1:8081/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'local',messages:[{role:'system',content:system+' /no_think'},{role:'user',content:user}],temperature:0,max_tokens:max,response_format:schema?{type:'json_schema',json_schema:{name:'source_review',strict:true,schema}}:{type:'json_object'},chat_template_kwargs:{enable_thinking:false}}),signal:AbortSignal.timeout(360000)});
   if(!r.ok)throw Error('Local model HTTP '+r.status);const d=await r.json();usage.calls++;usage.input_tokens+=d.usage?.prompt_tokens||0;usage.output_tokens+=d.usage?.completion_tokens||0;usage.inference_ms+=Date.now()-inferenceStart;if(d.choices?.[0]?.finish_reason==='length')throw Error('Model output incomplete');return parseModel(d.choices?.[0]?.message?.content);
  };
- let reviewed=0,chunks=0,acquired=0;
+ let reviewed=0,chunks=0,acquired=0,acquiredReady=0;
  while(Date.now()-start<budgetMs-360000){
   const c=await request({operation:'claim'});if(c.state==='busy'||c.state==='provider_backoff')break;
   if(c.state==='no_reviewable_evidence'){
    if(acquired>=3)break;
-   const result=await request({operation:'acquire'});acquired++;
+   const result=await request({operation:'acquire'});acquired++;acquiredReady+=(result.results||[]).filter(r=>r.state==='evidence_ready').length;
    if(['review_priority','backoff','busy','not_due'].includes(result.state))break;
    continue;
   }
@@ -57,12 +58,12 @@ export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.S
     const review=await infer(instruction,data,2600,schema);
     if(review.issuer_attribution_confirmed&&!review.attribution_citation_id)throw Error('Issuer confirmation lacks exact attribution citation');
     review.citations=selectedQuotes([{kind:'fact',citation_id:review.original_citation_id},{kind:'fact',citation_id:review.additional_citation_id},...(review.attribution_citation_id?[{kind:'attribution',citation_id:review.attribution_citation_id}]:[])],catalog);
-    const result=await request({...identity,operation:'review',review});completed=true;reviewed++;console.log(JSON.stringify({symbol:c.symbol,revision:result.id,qualified:result.qualified,idempotent:result.idempotent}));
+    const result=await request({...identity,operation:'review',review});completed=true;reviewed++;console.log(JSON.stringify({state:'validated_revision_saved',qualified:result.qualified,idempotent:result.idempotent}));
    }
-  }catch(error){await request({...identity,operation:'release',error:String(error.message).slice(0,200)});console.log(JSON.stringify({symbol:c.symbol,state:'review_incomplete',error:String(error.message).slice(0,200)}));continue;}
+  }catch(error){await request({...identity,operation:'release',error:String(error.message).slice(0,200)});console.log(JSON.stringify({state:'review_incomplete',error:String(error.message).slice(0,200)}));continue;}
   finally{if(!completed)await request({...identity,operation:'release'}).catch(()=>{});}
   if(!completed)break;
  }
- await heartbeat('completed');const status=await request({operation:'status'});console.log(JSON.stringify({reviewed,chunks,acquired,counts:status.counts,alerts:status.alerts,duration_ms:Date.now()-start}));return {reviewed,chunks,acquired,status};
+ await heartbeat('completed');const status=await request({operation:'status'});const continuation=(reviewed+chunks+acquiredReady)>0&&status.policy.active>0&&!status.alerts.includes('provider_backoff');if(process.env.GITHUB_OUTPUT)appendFileSync(process.env.GITHUB_OUTPUT,'continue_recovery='+String(continuation)+'\n');console.log(JSON.stringify({reviewed,chunks,acquired,counts:status.counts,alerts:status.alerts,duration_ms:Date.now()-start}));return {reviewed,chunks,acquired,status};
 }
 if(process.argv[1]===fileURLToPath(import.meta.url)){runWorker({heartbeatOnly:process.argv.includes('--heartbeat')||process.argv.includes('--finalize')}).catch(e=>{console.error('Autonomous worker failed:',e.message);process.exitCode=1;});}
