@@ -14,7 +14,7 @@ export function rfGaps(a){const result=[];if(a.direction==='negative')return [{k
 // Admission control is separate from the frozen research-followup-v1 requirements.
 // Never discard an assessment or alter the gaps defined by rfGaps; defer creating
 // additional work until the measured queue can sustainably process it.
-export function rfPlanBudget(active,newToday){const paused=active>=100,drain=active>=60,limit=paused?0:drain?6:24;return {mode:paused?'admission_paused':drain?'backlog_drain':'balanced',daily_limit:limit,remaining:Math.max(0,limit-newToday),backlog_reserved_share:paused?1:drain?0.75:0.5};}
+export function rfPlanBudget(active,newToday){const drain=active>=60,limit=24;return {mode:drain?'backlog_drain':'balanced',daily_limit:limit,remaining:Math.max(0,limit-newToday),backlog_reserved_share:drain?0.75:0.5};}
 export async function rfPlan(env){
  const now=rfNow(),today=now.slice(0,10)+'T00:00:00.000Z';
  const [activeRow,newRow,totalRow,cursorRow]=await Promise.all([
@@ -23,13 +23,13 @@ export async function rfPlan(env){
   rfFirst(env,'SELECT COUNT(*) n FROM semantic_analyses'),
   rfFirst(env,"SELECT value FROM prod_settings WHERE key='rf_planning_cursor'")
  ]);
- const active=activeRow?.n||0,budget=rfPlanBudget(active,newRow?.n||0),capacity=await rfFirst(env,"SELECT value FROM prod_settings WHERE key='h24_capacity'");if(capacity){const c=JSON.parse(capacity.value);if(c.at&&Date.now()-Date.parse(c.at)<86400000&&c.created_24h>c.closed_24h){budget.mode='capacity_paused';budget.daily_limit=0;budget.remaining=0;budget.backlog_reserved_share=1;}}const total=totalRow?.n||0,offset=total?((Number(cursorRow?.value)||0)%total):0;
+ const active=activeRow?.n||0,budget=rfPlanBudget(active,newRow?.n||0),capacity=await rfFirst(env,"SELECT value FROM prod_settings WHERE key='h24_capacity'");if(capacity){const c=JSON.parse(capacity.value);budget.arrival_pressure=Boolean(c.at&&Date.now()-Date.parse(c.at)<86400000&&c.created_24h>c.closed_24h);}const total=totalRow?.n||0,offset=total?((Number(cursorRow?.value)||0)%total):0;
  const [recent,aged]=await Promise.all([
   rfAll(env,'SELECT * FROM semantic_analyses ORDER BY created_at DESC,id DESC LIMIT 400'),
   rfAll(env,'SELECT * FROM semantic_analyses ORDER BY created_at ASC,id ASC LIMIT 200 OFFSET ?',offset)
  ]);
  if(total)await env.DB.prepare("INSERT INTO prod_settings VALUES ('rf_planning_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String((offset+200)%total)).run();
- if(budget.remaining===0)return {created:0,mode:budget.mode,daily_limit:budget.daily_limit,new_today:newRow?.n||0,pending_before:active,assessments_scanned:0,already_existing:0,deferred:true,note:'Admission paused while the outstanding research queue drains; existing jobs and evidence remain intact.'};
+ if(budget.remaining===0)return {created:0,mode:budget.mode,daily_limit:budget.daily_limit,new_today:newRow?.n||0,pending_before:active,assessments_scanned:0,already_existing:0,deferred:true,note:'Ordinary daily intake budget used; backlog size does not suspend admissions. Existing jobs and evidence remain intact.'};
  const analyses=[...new Map([...recent,...aged].map(r=>[r.id,r])).values()];
  const proposals=[];
  for(const r of analyses){

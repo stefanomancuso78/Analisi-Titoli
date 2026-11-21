@@ -16,14 +16,14 @@ function assessment(db,n,decision='research_only',kind='high'){
  db.prepare('INSERT INTO semantic_analyses VALUES (?,?,?,?,?,?,?)').run(id,doc,'SYM'+n,at,'test',decision,JSON.stringify(data));
  return id;
 }
-test('admissions pause above 100, restart cautiously below 100 and preserve daily caps',()=>{
- assert.deepEqual(rfPlanBudget(718,0),{mode:'admission_paused',daily_limit:0,remaining:0,backlog_reserved_share:1});
- assert.equal(rfPlanBudget(718,12).remaining,0);
+test('live-load intake keeps the ordinary budget even with backlog and preserves daily provider-independent caps',()=>{
+ assert.deepEqual(rfPlanBudget(718,0),{mode:'backlog_drain',daily_limit:24,remaining:24,backlog_reserved_share:0.75});
+ assert.equal(rfPlanBudget(718,12).remaining,12);
  assert.equal(rfPlanBudget(5,0).daily_limit,24);
- assert.equal(rfPlanBudget(99,0).daily_limit,6);
- assert.equal(rfPlanBudget(60,5).remaining,1);
+ assert.equal(rfPlanBudget(99,0).daily_limit,24);
+ assert.equal(rfPlanBudget(60,5).remaining,19);
  assert.equal(rfPlanBudget(59,24).remaining,0);
- assert.equal(rfPlanBudget(100,23).remaining,0);
+ assert.equal(rfPlanBudget(100,23).remaining,1);
 });
 test('research planner does not delete backlog and defers routine cases while congested',async()=>{
  const env=fixture(),db=env.sqlite;
@@ -32,14 +32,15 @@ test('research planner does not delete backlog and defers routine cases while co
  for(let i=35;i<49;i++)assessment(db,i,'qualified','high');
  assessment(db,49,'research_only','low');
  const before=db.prepare('SELECT COUNT(*) n FROM research_jobs').get().n;
+ db.prepare('INSERT INTO prod_settings VALUES (?,?)').run('h24_capacity',JSON.stringify({at:new Date().toISOString(),created_24h:100,closed_24h:0}));
  const first=await rfPlan(env);
- assert.equal(first.mode,'admission_paused');assert.equal(first.daily_limit,0);assert.equal(first.created,0);
+ assert.equal(first.mode,'backlog_drain');assert.equal(first.daily_limit,24);assert.equal(first.created,24);
  assert.equal(first.deferred,true);
  assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs WHERE analysis_id='a49'").get().n,0);
- assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs").get().n,before);
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs").get().n,before+24);
  const second=await rfPlan(env);
- assert.equal(second.created,0);assert.equal(second.new_today,0);
- assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs WHERE state='pending'").get().n,before);
+ assert.equal(second.created,0);assert.equal(second.new_today,24);
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM research_jobs WHERE state='pending'").get().n,before+24);
  const protocol=await rfEnsure(env);assert.equal(protocol.integrity,true);
  db.close();
 });
