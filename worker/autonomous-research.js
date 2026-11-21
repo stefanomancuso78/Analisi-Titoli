@@ -7,7 +7,7 @@ const haPut=(e,k,v)=>e.DB.prepare('INSERT INTO prod_settings VALUES (?,?) ON CON
 const haEvent=(e,kind,p)=>e.DB.prepare('INSERT INTO operational_events VALUES (?,?,?,?)').bind(crypto.randomUUID(),haNow(),'h24_'+kind,JSON.stringify(p)).run();
 export const haTransportFailure=message=>/Local model HTTP (?:429|5[0-9]{2})|fetch failed|timeout|timed out|memory pressure/i.test(String(message||''));
 const haKey=(id,hash,engine='legacy')=>'h24_dossier:'+id+':'+hash+(engine==='cpu-stream-v3'?':cpu-stream-v3':'');
-export function haPolicy(counts,created,reviewed){const active=['pending','retry','waiting_source','evidence_ready','running'].reduce((n,s)=>n+(counts[s]||0),0);return {mode:active>=100?'BACKLOG_RECOVERY':'STEADY_STATE',active,intake_allowed:active<100&&created<=reviewed,chunk_chars:4000,max_review_retries:3,model:'Qwen3-4B-Q4_K_M',paid_inference:false};}
+export function haPolicy(counts,created,reviewed){const active=['pending','retry','waiting_source','evidence_ready','running'].reduce((n,s)=>n+(counts[s]||0),0);return {mode:active>=100?'BACKLOG_RECOVERY':'STEADY_STATE',active,intake_allowed:active<100&&created<=reviewed,chunk_chars:4000,max_review_retries:3,max_validated_dossiers_per_run:1,model:'Qwen3-4B-Q4_K_M',paid_inference:false};}
 export async function haStatus(e){
  const counts=Object.fromEntries((await haAll(e,'SELECT state,COUNT(*) n FROM research_jobs GROUP BY state')).map(r=>[r.state,r.n]));
  const since=new Date(Date.now()-86400000).toISOString(),hour=new Date(Date.now()-3600000).toISOString();
@@ -34,6 +34,7 @@ async function haHandoffNotes(e,legacy,packet){
  return reused;
 }
 async function haClaim(e,a){
+ if(a.run_id&&await haFirst(e,"SELECT id FROM operational_events WHERE kind='h24_review' AND json_extract(payload,'$.run_id')=? LIMIT 1",String(a.run_id)))return {state:'busy',reason:'validated_batch_complete',next_cycle:'automatic_continuation'};
  const provider=await haGet(e,'h24_provider');if(provider?.next_attempt>haNow()&&(provider.worker_engine||'legacy')===(a.worker_engine||'legacy')&&(provider.transport_failures||0)>=3&&haTransportFailure(provider.last_error))return {state:'provider_backoff',next_attempt:provider.next_attempt};
  const lease=crypto.randomUUID();await e.DB.prepare("INSERT OR IGNORE INTO prod_leases VALUES ('h24-review','',0)").run();
  if(!await haFirst(e,"UPDATE prod_leases SET token=?,expires_at=? WHERE key='h24-review' AND expires_at<? RETURNING token",lease,Date.now()+20*60000,Date.now()))return {state:'busy'};
