@@ -21,7 +21,18 @@ export async function haStatus(e){
  return {as_of:haNow(),counts,review_checkpoints:await haAll(e,"SELECT json_extract(value,'$.state') state,COUNT(*) dossiers,SUM(json_array_length(json_extract(value,'$.notes'))) chunks FROM prod_settings WHERE key LIKE 'h24_dossier:%' GROUP BY state"),policy:p,created_24h:additions.n,revisions_24h:reviews.n,revisions_hour:h.n,h24_closed_24h:closed,measured_closed_per_hour:rate,estimated_hours_to_below_100:stable&&rate?Math.max(0,(p.active-99)/rate):null,measurement_window_hours:elapsed,eta_basis:'Estimate withheld until at least one hour and three actual revisions; observed H24 closures only; excludes future provider availability and new intake',oldest_active_at:oldest.at,oldest_age_hours:oldest.at?(Date.now()-Date.parse(oldest.at))/3600000:null,heartbeat:last,provider,provider_errors:await haAll(e,"SELECT json_extract(payload,'$.last_source') provider,COUNT(*) jobs,SUM(attempts) attempts FROM research_jobs WHERE attempts>0 GROUP BY provider ORDER BY attempts DESC LIMIT 20"),alerts,runs:runs.map(r=>({...r,payload:JSON.parse(r.payload)}))};
 }
 async function haFence(e,a){const row=await haFirst(e,"SELECT * FROM prod_leases WHERE key='h24-review'");if(!row||row.token!==a.lease||row.expires_at<=Date.now())throw Error('Lease expired or superseded');const state=await haGet(e,haKey(a.analysis_id,a.evidence_hash,a.worker_engine));if(!state||state.lease!==a.lease)throw Error('Dossier lease mismatch');if(await rfEvidenceHash(e,a.analysis_id)!==a.evidence_hash)throw Error('Evidence changed; new complete review required');return state;}
-async function haNext(e,state){for(const d of state.documents){const done=state.notes.filter(n=>n.document_id===d.id).sort((a,b)=>a.offset-b.offset);let offset=0;for(const n of done){if(n.offset!==offset)break;offset=n.end}if(offset<d.text_length){const row=await haFirst(e,'SELECT payload FROM graph_documents WHERE id=?',d.id),text=JSON.parse(row.payload).text.slice(offset,offset+(state.chunk_chars||10000));return {document_id:d.id,title:d.title,offset,end:offset+text.length,text,text_hash:await haHash(text)};}}return null;}
+async function haNext(e,state){for(const d of state.documents){const done=state.notes.filter(n=>n.document_id===d.id).sort((a,b)=>a.offset-b.offset);let offset=0;for(const n of done){if(n.offset>offset)break;offset=Math.max(offset,n.end)}if(offset<d.text_length){const row=await haFirst(e,'SELECT payload FROM graph_documents WHERE id=?',d.id),text=JSON.parse(row.payload).text.slice(offset,offset+(state.chunk_chars||10000));return {document_id:d.id,title:d.title,offset,end:offset+text.length,text,text_hash:await haHash(text)};}}return null;}
+async function haHandoffNotes(e,legacy,packet){
+ const reused=[],texts=new Map(),norm=t=>String(t).replace(/\s+/g,' ').trim();
+ for(const n of legacy?.notes||[]){
+  const d=packet.documents.find(d=>d.id===n.document_id),old=legacy.documents?.find(d=>d.id===n.document_id);
+  if(!d||d.content_hash!==old?.content_hash||n.model!=='Qwen3-4B-Q4_K_M'||!n.citations?.length||n.offset<0||n.end> d.text_length||n.end<=n.offset)continue;
+  if(!texts.has(d.id)){const row=await haFirst(e,'SELECT payload FROM graph_documents WHERE id=?',d.id);texts.set(d.id,JSON.parse(row.payload).text);}
+  const text=texts.get(d.id).slice(n.offset,n.end);if(await haHash(text)!==n.text_hash||!n.citations.every(c=>c.document_id===d.id&&norm(text).includes(norm(c.quote))))continue;
+  reused.push({...n,reused_from_engine:'legacy',reused_at:haNow()});
+ }
+ return reused;
+}
 async function haClaim(e,a){
  const provider=await haGet(e,'h24_provider');if(provider?.next_attempt>haNow()&&(provider.worker_engine||'legacy')===(a.worker_engine||'legacy')&&(provider.transport_failures||0)>=3&&haTransportFailure(provider.last_error))return {state:'provider_backoff',next_attempt:provider.next_attempt};
  const lease=crypto.randomUUID();await e.DB.prepare("INSERT OR IGNORE INTO prod_leases VALUES ('h24-review','',0)").run();
@@ -35,7 +46,8 @@ async function haClaim(e,a){
    const hash=await rfEvidenceHash(e,root.id);if(await haFirst(e,'SELECT id FROM research_revisions WHERE analysis_id=? AND evidence_hash=?',root.id,hash))continue;
    const key=haKey(root.id,hash,a.worker_engine),old=await haGet(e,key);if(old?.next_attempt>haNow()||old?.state==='blocked')continue;
    const packet=await rfPacket(e,root.id);if(packet.documents.length<2)continue;
-   const state={...(old||{}),analysis_id:root.id,symbol:root.symbol,evidence_hash:hash,documents:packet.documents.map(({id,title,text_length,content_hash})=>({id,title,text_length,content_hash})),notes:old?.notes||[],worker_engine:a.worker_engine||'legacy',chunk_chars:a.worker_engine==='cpu-stream-v3'?4000:10000,attempts:old?.attempts||0,state:'reading',lease,claimed_at:haNow(),run_id:String(a.run_id||'unknown').slice(0,120)};
+   const handoff=!old&&a.worker_engine==='cpu-stream-v3'?await haHandoffNotes(e,await haGet(e,haKey(root.id,hash,'legacy')),packet):[];
+   const state={...(old||{}),analysis_id:root.id,symbol:root.symbol,evidence_hash:hash,documents:packet.documents.map(({id,title,text_length,content_hash})=>({id,title,text_length,content_hash})),notes:old?.notes||handoff,worker_engine:a.worker_engine||'legacy',chunk_chars:a.worker_engine==='cpu-stream-v3'?4000:10000,attempts:old?.attempts||0,state:'reading',lease,claimed_at:haNow(),run_id:String(a.run_id||'unknown').slice(0,120)};
    await haPut(e,key,state);return {state:'claimed',worker_engine:a.worker_engine||'legacy',analysis_id:root.id,symbol:root.symbol,evidence_hash:hash,lease,documents:state.documents,next:await haNext(e,state),notes:state.notes};
   }
   await e.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-review' AND token=?").bind(lease).run();return {state:'no_reviewable_evidence'};
