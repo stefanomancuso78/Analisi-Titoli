@@ -7,7 +7,7 @@ const haPut=(e,k,v)=>e.DB.prepare('INSERT INTO prod_settings VALUES (?,?) ON CON
 const haEvent=(e,kind,p)=>e.DB.prepare('INSERT INTO operational_events VALUES (?,?,?,?)').bind(crypto.randomUUID(),haNow(),'h24_'+kind,JSON.stringify(p)).run();
 export const haTransportFailure=message=>/Local model HTTP (?:429|5[0-9]{2})|fetch failed|timeout|timed out|memory pressure/i.test(String(message||''));
 const haKey=(id,hash,engine='legacy')=>'h24_dossier:'+id+':'+hash+(engine==='cpu-stream-v3'?':cpu-stream-v3':'');
-export function haPolicy(counts,created,reviewed){const active=['pending','retry','waiting_source','evidence_ready','running'].reduce((n,s)=>n+(counts[s]||0),0);return {mode:active>=100?'BACKLOG_RECOVERY':'STEADY_STATE',active,intake_allowed:true,daily_intake_budget:24,intake_over_capacity:created>reviewed,chunk_chars:4000,max_review_retries:3,max_validated_dossiers_per_run:1,model:'Qwen3-4B-Q4_K_M',paid_inference:false};}
+export function haPolicy(counts,created,reviewed){const active=['pending','retry','waiting_source','evidence_ready','running'].reduce((n,s)=>n+(counts[s]||0),0);return {mode:active>=100?'BACKLOG_RECOVERY':'STEADY_STATE',queue_order:'source_publication_desc_then_analysis_date',active,intake_allowed:true,daily_intake_budget:24,intake_over_capacity:created>reviewed,chunk_chars:4000,max_review_retries:3,max_validated_dossiers_per_run:1,model:'Qwen3-4B-Q4_K_M',paid_inference:false};}
 export async function haStatus(e){
  const counts=Object.fromEntries((await haAll(e,'SELECT state,COUNT(*) n FROM research_jobs GROUP BY state')).map(r=>[r.state,r.n]));
  const since=new Date(Date.now()-86400000).toISOString(),hour=new Date(Date.now()-3600000).toISOString();
@@ -47,11 +47,9 @@ async function haClaim(e,a){
  const lease=crypto.randomUUID();await e.DB.prepare("INSERT OR IGNORE INTO prod_leases VALUES ('h24-review','',0)").run();
  if(!await haFirst(e,"UPDATE prod_leases SET token=?,expires_at=? WHERE key='h24-review' AND expires_at<? RETURNING token",lease,Date.now()+20*60000,Date.now()))return {state:'busy'};
  try{
-  const roots=await haAll(e,"SELECT a.id,a.symbol,MIN(j.created_at) oldest,MAX(j.priority) priority FROM semantic_analyses a JOIN research_jobs j ON j.analysis_id=a.id WHERE j.state IN ('evidence_ready','pending','retry','waiting_source') AND EXISTS (SELECT 1 FROM research_evidence x JOIN research_jobs z ON z.id=x.job_id WHERE z.analysis_id=a.id) GROUP BY a.id ORDER BY oldest,priority DESC LIMIT 1000");
-  const progress=await haAll(e,"SELECT json_extract(value,'$.analysis_id') id FROM prod_settings WHERE key LIKE 'h24_dossier:%' AND json_extract(value,'$.state') IN ('reading','retry') AND json_array_length(json_extract(value,'$.notes'))>0 AND (json_extract(value,'$.next_attempt') IS NULL OR json_extract(value,'$.next_attempt')<=?) ORDER BY json_array_length(json_extract(value,'$.notes')) DESC LIMIT 20",haNow());
-  const cursor=(Number(await haGet(e,'h24_review_cursor'))||0)%(roots.length||1);
-  const ordered=[...new Map([...progress.map(p=>roots.find(r=>r.id===p.id)).filter(Boolean),...roots.slice(cursor),...roots.slice(0,cursor)].map(r=>[r.id,r])).values()];
-  for(let i=0;i<Math.min(20,ordered.length);i++){const root=ordered[i];await haPut(e,'h24_review_cursor',(cursor+i+1)%roots.length);
+  const roots=await haAll(e,"SELECT a.id,a.symbol,COALESCE(NULLIF(d.published_at,''),a.created_at) event_at,MAX(j.priority) priority FROM semantic_analyses a LEFT JOIN graph_documents d ON d.id=a.document_id JOIN research_jobs j ON j.analysis_id=a.id WHERE j.state IN ('evidence_ready','pending','retry','waiting_source') AND EXISTS (SELECT 1 FROM research_evidence x JOIN research_jobs z ON z.id=x.job_id WHERE z.analysis_id=a.id) GROUP BY a.id ORDER BY event_at DESC,priority DESC,a.id DESC LIMIT 1000");
+  const ordered=roots;
+  for(let i=0;i<ordered.length;i++){const root=ordered[i];
    const hash=await rfEvidenceHash(e,root.id);if(await haFirst(e,'SELECT id FROM research_revisions WHERE analysis_id=? AND evidence_hash=?',root.id,hash))continue;
    const key=haKey(root.id,hash,a.worker_engine),old=await haGet(e,key);if(old?.next_attempt>haNow()||old?.state==='blocked')continue;
    const packet=await rfPacket(e,root.id);if(packet.documents.length<2)continue;
