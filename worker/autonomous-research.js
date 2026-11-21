@@ -68,7 +68,7 @@ export async function haOperation(e,a){
   await e.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-review' AND token=?").bind(a.lease).run();return result;
  }
  if(a.operation==='release'){
-  if(a.error){state.attempts++;state.last_error=String(a.error).slice(0,300);state.state=state.attempts>=3?'blocked':'retry';state.next_attempt=new Date(Date.now()+Math.min(86400000,15*60000*2**state.attempts)).toISOString();await haEvent(e,'error',{at:haNow(),analysis_id:a.analysis_id,error:state.last_error,attempts:state.attempts});}
+  if(a.error){const previous=await haGet(e,'h24_provider'),failures=(previous?.failures||0)+1;await haPut(e,'h24_provider',{state:failures>=3?'circuit_open':'degraded',provider:'local_Qwen3_CPU',failures,at:haNow(),last_error:String(a.error).slice(0,200),next_attempt:failures>=3?new Date(Date.now()+15*60000).toISOString():null});state.attempts++;state.last_error=String(a.error).slice(0,300);state.state=state.attempts>=3?'blocked':'retry';state.next_attempt=new Date(Date.now()+Math.min(86400000,15*60000*2**state.attempts)).toISOString();await haEvent(e,'error',{at:haNow(),analysis_id:a.analysis_id,error:state.last_error,attempts:state.attempts});}
   await haPut(e,key,state);await e.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-review' AND token=?").bind(a.lease).run();return {state:'released'};
  }
  throw Error('Unsupported bounded worker operation');
