@@ -19,7 +19,7 @@ jobs:
   drain:
     if: github.repository == 'stefanomancuso78/Analisi-Titoli' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 32
+    timeout-minutes: 45
     env:
       STOKIQ_URL: https://stokiq.online
       PARENT_RUN: ${{ inputs.parent_run }}
