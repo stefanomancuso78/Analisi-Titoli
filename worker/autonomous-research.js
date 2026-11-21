@@ -82,7 +82,7 @@ export async function haVerifyIdentity(token,fetcher=fetch){
   const head=parse(parts[0]),p=parse(parts[1]),now=Math.floor(Date.now()/1000);
   if(head.alg!=='RS256'||!head.kid||p.iss!=='https://token.actions.githubusercontent.com'||p.aud!=='https://stokiq.online'||!['repo:stefanomancuso78/Analisi-Titoli:ref:refs/heads/main','repo:stefanomancuso78@354685197/Analisi-Titoli@1452043120:ref:refs/heads/main'].includes(p.sub)||p.repository!=='stefanomancuso78/Analisi-Titoli'||p.ref!=='refs/heads/main'||p.workflow_ref!=='stefanomancuso78/Analisi-Titoli/.github/workflows/autonomous-research.yml@refs/heads/main'||!['schedule','workflow_dispatch'].includes(p.event_name)||!Number.isFinite(p.exp)||p.exp<=now||!Number.isFinite(p.iat)||p.iat>now+30||p.iat<now-600||p.nbf>now+30)return false;
   if(!haJwks||Date.now()-haJwksAt>3600000||!haJwks.keys.some(k=>k.kid===head.kid)){
-   const r=await fetcher('https://token.actions.githubusercontent.com/.well-known/jwks',{redirect:'error',signal:AbortSignal.timeout(5000)});if(!r.ok){console.error('H24 identity JWKS HTTP',r.status);return false;}const keys=await r.json();if(!Array.isArray(keys.keys)||keys.keys.length>20)return false;haJwks=keys;haJwksAt=Date.now();
+   const r=await fetcher('https://token.actions.githubusercontent.com/.well-known/jwks',{redirect:'error',signal:AbortSignal.timeout(15000)});if(!r.ok){console.error('H24 identity JWKS HTTP',r.status);return false;}const keys=await r.json();if(!Array.isArray(keys.keys)||keys.keys.length>20)return false;haJwks=keys;haJwksAt=Date.now();
   }
   const jwk=haJwks.keys.find(k=>k.kid===head.kid&&k.kty==='RSA');if(!jwk)return false;
   const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
