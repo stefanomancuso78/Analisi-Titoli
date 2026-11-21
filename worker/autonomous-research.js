@@ -41,7 +41,7 @@ async function haClaim(e,a){
 }
 export async function haOperation(e,a){
  if(a.operation==='status')return haStatus(e);
- if(a.operation==='heartbeat'){const record={at:haNow(),run_id:String(a.run_id||'').slice(0,120),phase:String(a.phase||'').slice(0,80),duration_ms:Math.max(0,Number(a.duration_ms)||0),resources:a.resources||null};await haPut(e,'h24_heartbeat',record);const capacity=await haStatus(e);await haPut(e,'h24_capacity',{at:record.at,created_24h:capacity.created_24h,closed_24h:capacity.h24_closed_24h});await haEvent(e,'heartbeat',record);return {state:'recorded'};}
+ if(a.operation==='heartbeat'){const record={at:haNow(),run_id:String(a.run_id||'').slice(0,120),phase:String(a.phase||'').slice(0,80),duration_ms:Math.max(0,Number(a.duration_ms)||0),resources:a.resources||null};const previous=await haGet(e,'h24_heartbeat');if(previous?.run_id===record.run_id){record.duration_ms=Math.max(record.duration_ms,previous.duration_ms||0);if((previous.resources?.inference_usage?.calls||0)>(record.resources?.inference_usage?.calls||0))record.resources={...record.resources,inference_usage:previous.resources.inference_usage};}await haPut(e,'h24_heartbeat',record);const capacity=await haStatus(e);await haPut(e,'h24_capacity',{at:record.at,created_24h:capacity.created_24h,closed_24h:capacity.h24_closed_24h});await haEvent(e,'heartbeat',record);return {state:'recorded'};}
  if(a.operation==='claim')return haClaim(e,a);
  if(a.operation==='acquire'){
   const status=await haStatus(e);if(status.counts.evidence_ready>=8)return {state:'review_priority',ready:status.counts.evidence_ready};

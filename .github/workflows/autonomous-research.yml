@@ -53,4 +53,6 @@ jobs:
           node scripts/autonomous-runner.mjs
       - name: Persist worker status, capacity and alarms
         if: always()
-        run: node scripts/autonomous-runner.mjs --heartbeat
+        env:
+          H24_JOB_STATUS: ${{ job.status }}
+        run: node scripts/autonomous-runner.mjs --finalize
