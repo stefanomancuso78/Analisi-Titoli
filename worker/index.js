@@ -1,4 +1,4 @@
-import {gmApi,gmInfer,GEMINI_PAGE} from './gemini.js';
+import {gmApi,gmInfer,gmStatus,gmModels,gmConfigure,GEMINI_PAGE} from './gemini.js';
 import {haApi,haStatus} from './autonomous-research.js';
 import {prView} from './performance-reconstruction.js';
 import {pfAdvanceExisting,pfDiagnostic} from './performance-diagnostics.js';
@@ -162,6 +162,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.manager_status)return managerStatus(env);
  if(name==='list_research'&&a.source_refresh_plan)return shRefreshPlan(env);
  if(name==='list_research'&&a.source_health)return shStatus(env);
+ if(name==='list_research'&&a.gemini_status){if(!owner(req,env))throw Error('Verifica Gemini riservata');return gmStatus(env);}
  if(name==='list_research'&&a.autonomous_status)return haStatus(env);
  if(name==='list_research'&&a.operational_status)return osStatus(env);
  if(name==='list_research'&&a.backup_recovery_credentials){if(env.REQUEST_ROLE!=='owner')throw Error('Verifica credenziali backup riservata al proprietario');return exRecoveryCredentials(env,a.backup_recovery_credentials)}
@@ -205,6 +206,8 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.selection_symbol)return pdSelection(env,a.selection_symbol,simPrincipal(req));
  if(name==='list_research'){const r=await env.DB.prepare('SELECT * FROM research ORDER BY created_at DESC').all();const research=r.results.map(x=>({...JSON.parse(x.payload),id:x.id,created_at:x.created_at}));return a.include_market?{...(a.summary?{research_counts:research.reduce((v,r)=>(v[r.kind]=(v[r.kind]||0)+1,v),{})}:{research}),comparisons:await comparisons(env),monitoring:await monitoringRuns(env)}:research}
  if(!owner(req,env))throw Error('Operazione riservata al proprietario autenticato');
+ if(name==='refresh_pattern_calibration'&&a.gemini_models)return gmModels(env);
+ if(name==='refresh_pattern_calibration'&&a.gemini_select_model){const status=await gmStatus(env);return gmConfigure(env,{model:a.gemini_select_model,enabled:true,free_project_confirmed:status.free_project_confirmed});}
  if(name==='refresh_pattern_calibration'&&a.repair_connector_redirects){const financial=await env.DB.prepare("UPDATE observation_sources SET last_poll=NULL,last_status=NULL,last_error=NULL WHERE last_status='error' AND last_error LIKE 'Invalid redirect value%'").run(),history=await env.DB.prepare("UPDATE capital_history_jobs SET last_poll=NULL,last_status=NULL,last_error=NULL WHERE last_status='error' AND last_error LIKE 'Invalid redirect value%'").run();await env.DB.prepare("INSERT INTO prod_settings VALUES ('connector_redirect_repair',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(JSON.stringify({at:new Date().toISOString(),reason:'Cloudflare supports manual redirect handling; only client configuration errors reset, no HTTP access denials reset'})).run();return {financial:financial.meta?.changes??null,history:history.meta?.changes??null}}
  if(name==='refresh_pattern_calibration'&&a.news_cycle){const references=await nwReferences(env),acquisition=await nwFetch(env),links=await nwLinkHistory(env),controls=await ncCycle(env),learning=await nwCycle(env);return {references,acquisition,links,controls,learning}}
  if(name==='refresh_pattern_calibration'&&a.news_primary)return nwPrimary(env,a.news_primary);
