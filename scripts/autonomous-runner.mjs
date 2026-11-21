@@ -14,16 +14,17 @@ export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.S
   const r=await fetcher(u.href,{headers:{Authorization:'Bearer '+process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN},signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('GitHub OIDC HTTP '+r.status);identity=(await r.json()).value;if(!identity)throw Error('GitHub returned no identity');identityAt=Date.now();return identity;
  };
  if(base!=='https://stokiq.online'&&process.env.NODE_ENV!=='test')throw Error('Unexpected production destination');
+ const usage={calls:0,input_tokens:0,output_tokens:0,inference_ms:0};
  const start=Date.now(),runId=process.env.GITHUB_RUN_ID||'local-verification',request=async(a)=>{
   const r=await fetcher(base+'/api/worker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...a,run_id:runId,worker_identity:await authorization()}),signal:AbortSignal.timeout(110000)});const d=await r.json();if(!r.ok){if(r.status===401&&identity){const p=JSON.parse(Buffer.from(identity.split('.')[1],'base64url').toString());console.log(JSON.stringify({identity_metadata:Object.fromEntries(['iss','aud','sub','repository','repository_id','ref','workflow_ref','event_name','iat','exp'].map(k=>[k,p[k]]))}));}throw Error(d.error||'Worker HTTP '+r.status);}return d;
  };
- const heartbeat=phase=>request({operation:'heartbeat',phase,duration_ms:Date.now()-start,resources:{system_free_bytes:freemem(),system_total_bytes:totalmem(),load_1m:loadavg()[0],cpu_count:availableParallelism(),runner:'github-public-standard-cpu',memory_rss_bytes:process.memoryUsage().rss,model,inference:'local_no_paid_api'}});
+ const heartbeat=phase=>request({operation:'heartbeat',phase,duration_ms:Date.now()-start,resources:{inference_usage:usage,system_free_bytes:freemem(),system_total_bytes:totalmem(),load_1m:loadavg()[0],cpu_count:availableParallelism(),runner:'github-public-standard-cpu',memory_rss_bytes:process.memoryUsage().rss,model,inference:'local_no_paid_api'}});
  await heartbeat(heartbeatOnly?'scheduler':'starting');if(heartbeatOnly){const d=await request({operation:'status'});console.log(JSON.stringify({counts:d.counts,alerts:d.alerts,worker:'github-actions'}));return d;}
  for(let i=0;i<90;i++){try{const r=await fetcher('http://127.0.0.1:8081/health',{signal:AbortSignal.timeout(2000)});if(r.ok)break;if(i===89)throw Error('Local model did not become ready')}catch(e){if(i===89)throw e}await new Promise(r=>setTimeout(r,2000));}
- const infer=async(system,user,max=1200)=>{
+ const infer=async(system,user,max=1200)=>{const inferenceStart=Date.now();
   if(freemem()<512*1024*1024)throw Error('Runner memory pressure: checkpoint retained');
   const r=await fetcher('http://127.0.0.1:8081/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'local',messages:[{role:'system',content:system+' /no_think'},{role:'user',content:user}],temperature:0,max_tokens:max,response_format:{type:'json_object'},chat_template_kwargs:{enable_thinking:false}}),signal:AbortSignal.timeout(240000)});
-  if(!r.ok)throw Error('Local model HTTP '+r.status);const d=await r.json();if(d.choices?.[0]?.finish_reason==='length')throw Error('Model output incomplete');return parseModel(d.choices?.[0]?.message?.content);
+  if(!r.ok)throw Error('Local model HTTP '+r.status);const d=await r.json();usage.calls++;usage.input_tokens+=d.usage?.prompt_tokens||0;usage.output_tokens+=d.usage?.completion_tokens||0;usage.inference_ms+=Date.now()-inferenceStart;if(d.choices?.[0]?.finish_reason==='length')throw Error('Model output incomplete');return parseModel(d.choices?.[0]?.message?.content);
  };
  let reviewed=0,chunks=0,acquired=0;
  while(Date.now()-start<budgetMs-240000){
