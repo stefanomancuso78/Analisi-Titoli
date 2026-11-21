@@ -1,0 +1,56 @@
+name: StokIQ Autonomous Research H24
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: stokiq-autonomous-production
+  cancel-in-progress: false
+jobs:
+  drain:
+    if: github.repository == 'stefanomancuso78/Analisi-Titoli' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    env:
+      STOKIQ_URL: https://stokiq.online
+      MODEL_PATH: ${{ github.workspace }}/.h24-cache/Qwen3-4B-Q4_K_M.gguf
+      MODEL_SHA256: 7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5
+      LLAMA_SHA: 7476e4726178b27e949b2b45e45705882ac8c501
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify short-lived GitHub identity and record unattended heartbeat
+        run: node scripts/autonomous-runner.mjs --heartbeat
+      - name: Restore public model and compiled CPU engine
+        uses: actions/cache@v4
+        with:
+          path: .h24-cache
+          key: stokiq-qwen3-4b-q4km-llama-7476e472-linux-x64-v1
+      - name: Prepare pinned Apache-2.0 model and MIT CPU runtime
+        run: |
+          set -euo pipefail
+          mkdir -p .h24-cache
+          if [ ! -f "$MODEL_PATH" ]; then
+            curl --fail --location --retry 3 --max-time 300 'https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf' -o "$MODEL_PATH"
+          fi
+          echo "$MODEL_SHA256  $MODEL_PATH" | sha256sum --check --status
+          if [ ! -x .h24-cache/bin/llama-server ]; then
+            git clone --filter=blob:none https://github.com/ggml-org/llama.cpp.git /tmp/stokiq-llama
+            git -C /tmp/stokiq-llama checkout "$LLAMA_SHA"
+            cmake -S /tmp/stokiq-llama -B /tmp/stokiq-llama/build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF -DBUILD_SHARED_LIBS=OFF
+            cmake --build /tmp/stokiq-llama/build --target llama-server -j 4
+            mkdir -p .h24-cache/bin
+            cp /tmp/stokiq-llama/build/bin/llama-server .h24-cache/bin/
+          fi
+      - name: Read and review acquired documents with local CPU inference
+        run: |
+          set -euo pipefail
+          .h24-cache/bin/llama-server -m "$MODEL_PATH" --host 127.0.0.1 --port 8081 -c 16384 -t 4 --parallel 1 --jinja --chat-template-kwargs '{"enable_thinking":false}' > /tmp/stokiq-model.log 2>&1 &
+          model_pid=$!
+          trap 'kill "$model_pid" 2>/dev/null || true' EXIT
+          node scripts/autonomous-runner.mjs
+      - name: Persist worker status, capacity and alarms
+        if: always()
+        run: node scripts/autonomous-runner.mjs --heartbeat

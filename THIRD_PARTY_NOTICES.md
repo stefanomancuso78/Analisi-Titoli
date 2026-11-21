@@ -12,3 +12,7 @@ Source files and reports record commit/file hashes, provenance and limitations. 
 - scikit-learn 1.8.0 (BSD-3-Clause) is used for the separate temporal-holdout prediction report: LogisticRegression, StandardScaler and HistGradientBoostingClassifier. No claim that this is Qlib or that it validates news-based predictions.
 - The Worker uses an independent native HRP implementation, numerically compared with Riskfolio-Lib 7.4.1 on controlled fixtures (single linkage, no optimal leaf ordering). Riskfolio itself remains in the Python research environment. See reports/hrp-parity-v1.json and quantlab/verify_hrp_parity.py.
 - SEC structured facts and official issuer documents retain source, filing/acquisition dates, units and period context. Public accessibility is not represented as a blanket commercial-display license for third-party market feeds.
+
+## Autonomous research CPU runtime (H24)
+
+The optional GitHub Actions worker downloads Qwen3-4B-GGUF from Qwen (Apache-2.0), pinned to revision `bc640142c66e1fdd12af0bd68f40445458f3869b`, SHA-256 `7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5`. It runs with llama.cpp (MIT), source commit `7476e4726178b27e949b2b45e45705882ac8c501`. Weights and binaries are cached in Actions, not shipped to visitors. No paid inference API is called. Model output is a research hypothesis, not an analyst certification. Exact citations and full-text coverage are validated before a revision is saved.

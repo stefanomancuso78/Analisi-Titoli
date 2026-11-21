@@ -1,3 +1,4 @@
+import {haApi,haStatus} from './autonomous-research.js';
 import {prView} from './performance-reconstruction.js';
 import {pfAdvanceExisting,pfDiagnostic} from './performance-diagnostics.js';
 import {changesStatus,CHANGES_HTML,CHANGES_UI} from './changes.js';
@@ -157,6 +158,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.manager_status)return managerStatus(env);
  if(name==='list_research'&&a.source_refresh_plan)return shRefreshPlan(env);
  if(name==='list_research'&&a.source_health)return shStatus(env);
+ if(name==='list_research'&&a.autonomous_status)return haStatus(env);
  if(name==='list_research'&&a.operational_status)return osStatus(env);
  if(name==='list_research'&&a.backup_recovery_credentials){if(env.REQUEST_ROLE!=='owner')throw Error('Verifica credenziali backup riservata al proprietario');return exRecoveryCredentials(env,a.backup_recovery_credentials)}
  if(name==='list_research'&&a.backup_recovery_export){if(env.REQUEST_ROLE!=='owner')throw Error('Export ripristino riservato al proprietario');return exRecoveryExport(env,a.backup_recovery_export)}
@@ -342,7 +344,7 @@ async function publishExperiment(snapshots,req,env,now){
  return {published_at:now,experiment:'M1D-v0 — regola meccanica non calibrata',published,skipped};
 }
 export default {async fetch(req,env){
- try{const url=new URL(req.url);env={...env,REQUEST_ROLE:await pdRole(req,env)};
+ try{const url=new URL(req.url);if(url.pathname==='/api/worker')return haApi(req,env);env={...env,REQUEST_ROLE:await pdRole(req,env)};
  if(url.pathname==='/stokiq-wordmark-v1.png'&&req.method==='GET')return new Response(Uint8Array.from(atob(WORDMARK_BASE64),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/png','Cache-Control':'public,max-age=31536000,immutable'}});
  if(url.pathname==='/stokiq-logo-v2.png'&&req.method==='GET')return new Response(Uint8Array.from(atob(LOGO_BASE64),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/png','Cache-Control':'public,max-age=31536000,immutable'}});
  if(url.pathname==='/unlock'&&req.method==='POST'){
@@ -390,6 +392,7 @@ export default {async fetch(req,env){
  if(url.pathname==='/api/changes'&&req.method==='GET'){try{return json(await changesStatus(env,simPrincipal(req),url.searchParams.get('since')))}catch(e){return json({error:e.message},400)}}
  if(url.pathname==='/api/manager-status'&&req.method==='GET')return json(await managerStatus(env));
  if(url.pathname==='/api/source-health'&&req.method==='GET')return json(await shStatus(env));
+ if(url.pathname==='/api/autonomous-status'&&req.method==='GET')return json(await haStatus(env));
  if(url.pathname==='/api/performance'&&req.method==='GET')return json(await prView(env,await pcGroups(env),await parallelStatus(env),new Date().toISOString(),await t4Status(env)));
  if(url.pathname==='/api/performance/portfolios'&&req.method==='GET'){const value=await pcPortfolio(env,simPrincipal(req),url.searchParams.get('id'));return json(value,value.status||200)}
  if(url.pathname==='/api/performance/stock'&&req.method==='GET'){const symbol=url.searchParams.get('symbol');if(!/^[A-Z0-9.\-]{1,30}$/.test(symbol||''))return json({error:'Simbolo non valido'},400);const value=await pcStock(env,symbol);return json(value,value.status||200)}
