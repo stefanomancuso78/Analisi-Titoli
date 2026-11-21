@@ -348,7 +348,7 @@ async function publishExperiment(snapshots,req,env,now){
  return {published_at:now,experiment:'M1D-v0 — regola meccanica non calibrata',published,skipped};
 }
 export default {async fetch(req,env){
- try{const url=new URL(req.url);if(url.pathname==='/api/worker')return haApi(req,env,{market:()=>t4QuoteSweep(req,env)});env={...env,REQUEST_ROLE:await pdRole(req,env)};
+ try{const url=new URL(req.url);if(url.pathname==='/api/worker')return haApi(req,env,{market:()=>t4QuoteSweep(req,{...env,REQUEST_ROLE:'owner'})});env={...env,REQUEST_ROLE:await pdRole(req,env)};
  if(url.pathname==='/stokiq-wordmark-v1.png'&&req.method==='GET')return new Response(Uint8Array.from(atob(WORDMARK_BASE64),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/png','Cache-Control':'public,max-age=31536000,immutable'}});
  if(url.pathname==='/stokiq-logo-v2.png'&&req.method==='GET')return new Response(Uint8Array.from(atob(LOGO_BASE64),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/png','Cache-Control':'public,max-age=31536000,immutable'}});
  if(url.pathname==='/unlock'&&req.method==='POST'){

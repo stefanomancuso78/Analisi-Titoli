@@ -55,7 +55,7 @@ jobs:
         id: research
         run: |
           set -euo pipefail
-          .h24-cache/bin/llama-server -m "$MODEL_PATH" --host 127.0.0.1 --port 8081 -c 16384 -t 4 --parallel 1 --jinja --chat-template-kwargs '{"enable_thinking":false}' > /tmp/stokiq-model.log 2>&1 &
+          .h24-cache/bin/llama-server -m "$MODEL_PATH" --host 127.0.0.1 --port 8081 -c 16384 -t 4 --threads-batch 4 --parallel 1 --jinja --chat-template-kwargs '{"enable_thinking":false}' > /tmp/stokiq-model.log 2>&1 &
           model_pid=$!
           trap 'kill "$model_pid" 2>/dev/null || true' EXIT
           node scripts/autonomous-runner.mjs
