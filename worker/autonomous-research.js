@@ -84,9 +84,9 @@ export async function haVerifyIdentity(token,fetcher=fetch){
   if(!haJwks||Date.now()-haJwksAt>3600000||!haJwks.keys.some(k=>k.kid===head.kid)){
    const r=await fetcher('https://token.actions.githubusercontent.com/.well-known/jwks',{redirect:'error',signal:AbortSignal.timeout(15000)});if(!r.ok){console.error('H24 identity JWKS HTTP',r.status);return false;}const keys=await r.json();if(!Array.isArray(keys.keys)||keys.keys.length>20)return false;haJwks=keys;haJwksAt=Date.now();
   }
-  const jwk=haJwks.keys.find(k=>k.kid===head.kid&&k.kty==='RSA');if(!jwk)return false;
+  const jwk=haJwks.keys.find(k=>k.kid===head.kid&&k.kty==='RSA');if(!jwk){console.error('H24 identity signing key unavailable');return false;}
   const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
-  return await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,decode(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]));
+  const verified=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,decode(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]));if(!verified)console.error('H24 identity signature rejected');return verified;
  }catch(error){console.error('H24 identity verification error',String(error.message).slice(0,180));return false;}
 }
 export async function haApi(req,e){
