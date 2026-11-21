@@ -18,7 +18,7 @@ export async function haStatus(e){
  const p=haPolicy(counts,additions.n,reviews.n),alerts=[];
  if(!last||Date.now()-Date.parse(last.at)>40*60000)alerts.push('worker_heartbeat_missing');
  if(p.active&&!(h.n))alerts.push('reviews_stalled_last_hour');if(additions.n>closed&&p.active>=100)alerts.push('intake_exceeds_completions');if(provider?.next_attempt>haNow()&&(provider.worker_engine||'legacy')===(last?.worker_engine||'legacy')&&(provider.transport_failures||0)>=3&&haTransportFailure(provider.last_error))alerts.push('provider_backoff');
- return {as_of:haNow(),counts,review_checkpoints:await haAll(e,"SELECT json_extract(value,'$.state') state,COUNT(*) dossiers,SUM(json_array_length(json_extract(value,'$.notes'))) chunks FROM prod_settings WHERE key LIKE 'h24_dossier:%' GROUP BY state"),policy:p,created_24h:additions.n,revisions_24h:reviews.n,revisions_hour:h.n,h24_closed_24h:closed,measured_closed_per_hour:rate,estimated_hours_to_below_100:stable&&rate?Math.max(0,(p.active-99)/rate):null,measurement_window_hours:elapsed,eta_basis:'Estimate withheld until at least one hour and three actual revisions; observed H24 closures only; excludes future provider availability and new intake',oldest_active_at:oldest.at,oldest_age_hours:oldest.at?(Date.now()-Date.parse(oldest.at))/3600000:null,heartbeat:last,admission:await haGet(e,'h24_admission_last'),provider,provider_errors:await haAll(e,"SELECT json_extract(payload,'$.last_source') provider,COUNT(*) jobs,SUM(attempts) attempts FROM research_jobs WHERE attempts>0 GROUP BY provider ORDER BY attempts DESC LIMIT 20"),alerts,runs:runs.map(r=>({...r,payload:JSON.parse(r.payload)}))};
+ return {as_of:haNow(),counts,review_checkpoints:await haAll(e,"SELECT json_extract(value,'$.state') state,COUNT(*) dossiers,SUM(json_array_length(json_extract(value,'$.notes'))) chunks FROM prod_settings WHERE key LIKE 'h24_dossier:%' GROUP BY state"),policy:p,created_24h:additions.n,revisions_24h:reviews.n,revisions_hour:h.n,h24_closed_24h:closed,measured_closed_per_hour:rate,estimated_hours_to_below_100:stable&&rate?Math.max(0,(p.active-99)/rate):null,measurement_window_hours:elapsed,eta_basis:'Estimate withheld until at least one hour and three actual revisions; observed H24 closures only; excludes future provider availability and new intake',oldest_active_at:oldest.at,oldest_age_hours:oldest.at?(Date.now()-Date.parse(oldest.at))/3600000:null,heartbeat:last,admission:await haGet(e,'h24_admission_last'),market:await haGet(e,'h24_market_last'),provider,provider_errors:await haAll(e,"SELECT json_extract(payload,'$.last_source') provider,COUNT(*) jobs,SUM(attempts) attempts FROM research_jobs WHERE attempts>0 GROUP BY provider ORDER BY attempts DESC LIMIT 20"),alerts,runs:runs.map(r=>({...r,payload:JSON.parse(r.payload)}))};
 }
 async function haAdmission(e){
  const last=await haGet(e,'h24_admission_last');if(last?.at&&Date.now()-Date.parse(last.at)<3600000)return {state:'not_due',last:last.at};
@@ -114,7 +114,7 @@ export async function haVerifyIdentity(token,fetcher=fetch){
   const verified=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,decode(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]));if(!verified)console.error('H24 identity signature rejected');return verified;
  }catch(error){console.error('H24 identity verification error',String(error.message).slice(0,180));return false;}
 }
-export async function haApi(req,e){
+export async function haApi(req,e,hooks={}){
  const fail=(error,status)=>new Response(JSON.stringify({error}),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
  if(req.method!=='POST')return fail('Unauthorized GitHub workflow identity',401);
  if(Number(req.headers.get('Content-Length'))>1000000)return fail('Body too large',413);
@@ -123,6 +123,7 @@ export async function haApi(req,e){
   const token=a.worker_identity||req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
   if(!await haVerifyIdentity(token))return fail('Unauthorized GitHub workflow identity',401);
   delete a.worker_identity;
-  return new Response(JSON.stringify(await haOperation(e,a)),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+  const result=await haOperation(e,a);if(a.operation==='heartbeat'&&a.phase==='scheduler'&&hooks.market){try{result.market=await hooks.market()}catch(error){result.market={state:'failed',error:String(error.message).slice(0,180)};await haEvent(e,'market_error',result.market)}}
+  return new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
  }catch(error){return fail(String(error.message).slice(0,300),400)}
 }
