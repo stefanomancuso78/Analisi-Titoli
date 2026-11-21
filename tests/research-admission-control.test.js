@@ -44,3 +44,12 @@ test('research planner does not delete backlog and defers routine cases while co
  const protocol=await rfEnsure(env);assert.equal(protocol.integrity,true);
  db.close();
 });
+
+test('new source publication outranks old qualified assessments even when the old file was just acquired',async()=>{
+ const e=fixture();assessment(e.sqlite,1,'qualified');assessment(e.sqlite,2);
+ e.sqlite.prepare("UPDATE graph_documents SET published_at='2026-11-20T00:00:00Z',acquired_at='2026-11-20T00:00:00Z' WHERE id='doc2'").run();
+ e.sqlite.prepare("UPDATE graph_documents SET acquired_at='2026-11-21T00:00:00Z' WHERE id='doc1'").run();
+ await rfPlan(e);
+ assert.equal(e.sqlite.prepare('SELECT analysis_id FROM research_jobs ORDER BY rowid LIMIT 1').get().analysis_id,'a2');
+ assert.equal((await rfEnsure(e)).integrity,true);
+});
