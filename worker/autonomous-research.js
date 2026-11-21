@@ -91,7 +91,7 @@ export async function haVerifyIdentity(token,fetcher=fetch){
 }
 export async function haApi(req,e){
  const fail=(error,status)=>new Response(JSON.stringify({error}),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
- const token=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';if(!await haVerifyIdentity(token))return fail('Unauthorized GitHub workflow identity',401);
+ const token=req.headers.get('X-StokIQ-Worker-Identity')||req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';if(!await haVerifyIdentity(token))return fail('Unauthorized GitHub workflow identity',401);
  if(req.method!=='POST')return fail('POST required',405);if(Number(req.headers.get('Content-Length'))>1000000)return fail('Body too large',413);
  try{const body=await req.text();if(body.length>1000000)return fail('Body too large',413);return new Response(JSON.stringify(await haOperation(e,JSON.parse(body))),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}catch(error){return fail(String(error.message).slice(0,300),400)}
 }
