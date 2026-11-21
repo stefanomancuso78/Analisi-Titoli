@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import {readFileSync,readdirSync} from 'node:fs';
-import {gmApi,gmStatus,gmConfigure,gmInfer,gmModels,gmNormalizeKey} from '../worker/gemini.js';
+import {gmApi,gmStatus,gmConfigure,gmInfer,gmModels,gmNormalizeKey,gmQuotaWait} from '../worker/gemini.js';
 function fixture(){
  const sqlite=new DatabaseSync(':memory:');
  for(const f of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sqlite.exec(readFileSync('drizzle/'+f,'utf8'));
@@ -19,3 +19,5 @@ test('pasted key tolerates surrounding whitespace but rejects embedded whitespac
 test('AI Studio keys containing a dot pass both normalization and encrypted storage unchanged',async()=>{const e=fixture(),dotted='AQ.'+'sample_test_key_'.repeat(4);assert.equal(gmNormalizeKey(dotted),dotted);await gmConfigure(e,{...config,key:dotted});const result=await gmModels(e,async(u,o)=>{assert.equal(o.headers['x-goog-api-key'],dotted);return Response.json({models:[]});});assert.deepEqual(result.models,[]);});
 
 test('Google provider error reason is visible without echoing the secret',async()=>{const e=fixture();await gmConfigure(e,config);const r=await gmInfer(e,request,async()=>Response.json({error:{message:'API key '+key+' is not valid'}},{status:400}));assert.equal(r.available,false);assert.ok(r.reason.includes('not valid'));assert.ok(!JSON.stringify(await gmStatus(e)).includes(key));});
+
+test('exhausted daily Gemini quota waits for Pacific midnight while minute limits retain short backoff',()=>{const error='Quota exceeded, limit: 20, model: gemini-2.5-flash, Generate content requests per day limit exceeded on Free Tier.';const winter=gmQuotaWait(429,error,'30',Date.parse('2026-11-21T11:18:00Z'));assert.equal(winter.kind,'daily_quota');assert.equal(winter.observed_daily_limit,20);assert.equal(winter.next_attempt,'2026-11-22T08:00:30.000Z');assert.equal(gmQuotaWait(429,error,null,Date.parse('2026-07-01T12:00:00Z')).next_attempt,'2026-07-02T07:00:30.000Z');assert.equal(gmQuotaWait(429,'Requests per minute exceeded','120',Date.parse('2026-11-21T11:18:00Z')).next_attempt,'2026-11-21T11:20:00.000Z');});
