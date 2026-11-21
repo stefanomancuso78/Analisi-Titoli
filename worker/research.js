@@ -18,12 +18,12 @@ export function rfPlanBudget(active,newToday){const paused=active>=100,drain=act
 export async function rfPlan(env){
  const now=rfNow(),today=now.slice(0,10)+'T00:00:00.000Z';
  const [activeRow,newRow,totalRow,cursorRow]=await Promise.all([
-  rfFirst(env,"SELECT COUNT(*) n FROM research_jobs WHERE state IN ('pending','retry','waiting_source')"),
+  rfFirst(env,"SELECT COUNT(*) n FROM research_jobs WHERE state IN ('pending','retry','waiting_source','evidence_ready','running')"),
   rfFirst(env,'SELECT COUNT(*) n FROM research_jobs WHERE created_at>=?',today),
   rfFirst(env,'SELECT COUNT(*) n FROM semantic_analyses'),
   rfFirst(env,"SELECT value FROM prod_settings WHERE key='rf_planning_cursor'")
  ]);
- const active=activeRow?.n||0,budget=rfPlanBudget(active,newRow?.n||0),total=totalRow?.n||0,offset=total?((Number(cursorRow?.value)||0)%total):0;
+ const active=activeRow?.n||0,budget=rfPlanBudget(active,newRow?.n||0),capacity=await rfFirst(env,"SELECT value FROM prod_settings WHERE key='h24_capacity'");if(capacity){const c=JSON.parse(capacity.value);if(c.at&&Date.now()-Date.parse(c.at)<86400000&&c.created_24h>c.closed_24h){budget.mode='capacity_paused';budget.daily_limit=0;budget.remaining=0;budget.backlog_reserved_share=1;}}const total=totalRow?.n||0,offset=total?((Number(cursorRow?.value)||0)%total):0;
  const [recent,aged]=await Promise.all([
   rfAll(env,'SELECT * FROM semantic_analyses ORDER BY created_at DESC,id DESC LIMIT 400'),
   rfAll(env,'SELECT * FROM semantic_analyses ORDER BY created_at ASC,id ASC LIMIT 200 OFFSET ?',offset)
