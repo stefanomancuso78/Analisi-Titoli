@@ -248,6 +248,7 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.method_review)return mtReview(env,a.method_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.research_source)return {evidence:await rfCollect(env,a.research_source.job_id,a.research_source.url)};
  if(name==='refresh_pattern_calibration'&&a.research_reassessment){const result=await rfSave(env,a.research_reassessment,simPrincipal(req)||'authenticated-admin');return {...result,samples:await seedSemanticSamples(req,env)}}
+ if(name==='refresh_pattern_calibration'&&a.research_plan_only)return rfPlan(env);
  if(name==='refresh_pattern_calibration'&&a.research_cycle){const cycle=await rfCycle(env),resume=await rfResume(env),intelligence=await iqCycle(env);await opMaintenance(env);return {research_cycle:cycle,resume,intelligence,samples:await seedSemanticSamples(req,env)}}
  if(name==='refresh_pattern_calibration'&&a.semantic_analysis){const analysis=await smSave(env,a.semantic_analysis,simPrincipal(req)||'authenticated-admin');const samples=await seedSemanticSamples(req,env);return {analysis,samples}}
  if(name==='refresh_pattern_calibration'&&a.semantic_cycle){const semantic_cycle=await smCycle(env);return {semantic_cycle,samples:await seedSemanticSamples(req,env)}}
