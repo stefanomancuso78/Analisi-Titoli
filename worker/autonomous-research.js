@@ -84,10 +84,11 @@ export async function haOperation(e,a){
  }
  if(a.operation==='review'){
   if(await haNext(e,state))throw Error('Full document coverage not complete');
-  if(!state.notes.every(n=>n.model==='Qwen3-4B-Q4_K_M'))throw Error('Unverified model receipt');
+  if(!state.notes.every(n=>n.model==='Qwen3-4B-Q4_K_M'||/^gemini:gemini-[a-z0-9.-]+$/.test(n.model)))throw Error('Unverified model receipt');
   const before=await haFirst(e,"SELECT COUNT(*) n FROM research_jobs WHERE analysis_id=? AND state='evidence_ready'",a.analysis_id);
-  const result=await rfSave(e,{...a.review,analysis_id:a.analysis_id,evidence_hash:a.evidence_hash,review_scope:'whole_acquired_text'},'h24:Qwen3-4B:github-actions');
-  state.state='reviewed';state.completed_at=haNow();state.revision_id=result.id;await haPut(e,key,state);await haPut(e,'h24_provider',{state:'ok',at:haNow()});await haEvent(e,'review',{at:haNow(),analysis_id:a.analysis_id,revision_id:result.id,qualified:result.qualified,closed:result.idempotent?0:before.n,run_id:state.run_id,model:'Qwen3-4B-Q4_K_M',chunks:state.notes.length});
+  const reviewModel=typeof a.model==='string'&&/^gemini:gemini-[a-z0-9.-]+$/.test(a.model)?a.model:'Qwen3-4B-Q4_K_M';
+  const result=await rfSave(e,{...a.review,analysis_id:a.analysis_id,evidence_hash:a.evidence_hash,review_scope:'whole_acquired_text'},'h24:'+reviewModel+':github-actions');
+  state.state='reviewed';state.completed_at=haNow();state.revision_id=result.id;await haPut(e,key,state);await haPut(e,'h24_provider',{state:'ok',at:haNow()});await haEvent(e,'review',{at:haNow(),analysis_id:a.analysis_id,revision_id:result.id,qualified:result.qualified,closed:result.idempotent?0:before.n,run_id:state.run_id,model:reviewModel,gemini_used:state.notes.some(n=>n.model.startsWith('gemini:')),chunks:state.notes.length});
   await e.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-review' AND token=?").bind(a.lease).run();return result;
  }
  if(a.operation==='release'){
@@ -121,6 +122,7 @@ export async function haApi(req,e,hooks={}){
   const token=a.worker_identity||req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
   if(!await haVerifyIdentity(token))return fail('Unauthorized GitHub workflow identity',401);
   delete a.worker_identity;
+  if(a.operation==='inference'&&hooks.infer)return new Response(JSON.stringify(await hooks.infer(a)),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
   const result=await haOperation(e,a);if(a.operation==='heartbeat'&&a.phase==='scheduler'&&hooks.market){try{result.market=await hooks.market()}catch(error){result.market={state:'failed',error:String(error.message).slice(0,180)};await haEvent(e,'market_error',result.market)}}
   return new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
  }catch(error){return fail(String(error.message).slice(0,300),400)}
