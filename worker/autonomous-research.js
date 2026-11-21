@@ -82,7 +82,7 @@ export async function haVerifyIdentity(token,fetcher=fetch){
   const head=parse(parts[0]),p=parse(parts[1]),now=Math.floor(Date.now()/1000);
   if(head.alg!=='RS256'||!head.kid||p.iss!=='https://token.actions.githubusercontent.com'||p.aud!=='https://stokiq.online'||!['repo:stefanomancuso78/Analisi-Titoli:ref:refs/heads/main','repo:stefanomancuso78@354685197/Analisi-Titoli@1452043120:ref:refs/heads/main'].includes(p.sub)||p.repository!=='stefanomancuso78/Analisi-Titoli'||p.ref!=='refs/heads/main'||p.workflow_ref!=='stefanomancuso78/Analisi-Titoli/.github/workflows/autonomous-research.yml@refs/heads/main'||!['schedule','workflow_dispatch'].includes(p.event_name)||!Number.isFinite(p.exp)||p.exp<=now||!Number.isFinite(p.iat)||p.iat>now+30||p.iat<now-600||p.nbf>now+30)return false;
   if(!haJwks||Date.now()-haJwksAt>3600000||!haJwks.keys.some(k=>k.kid===head.kid)){
-   const r=await fetcher('https://token.actions.githubusercontent.com/.well-known/jwks',{redirect:'error',signal:AbortSignal.timeout(15000)});if(!r.ok){console.error('H24 identity JWKS HTTP',r.status);return false;}const keys=await r.json();if(!Array.isArray(keys.keys)||keys.keys.length>20)return false;haJwks=keys;haJwksAt=Date.now();
+   const r=await fetcher('https://token.actions.githubusercontent.com/.well-known/jwks',{redirect:'manual',signal:AbortSignal.timeout(15000)});if(!r.ok){console.error('H24 identity JWKS HTTP',r.status);return false;}const keys=await r.json();if(!Array.isArray(keys.keys)||keys.keys.length>20)return false;haJwks=keys;haJwksAt=Date.now();
   }
   const jwk=haJwks.keys.find(k=>k.kid===head.kid&&k.kty==='RSA');if(!jwk){console.error('H24 identity signing key unavailable');return false;}
   const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
@@ -95,7 +95,7 @@ export async function haApi(req,e){
  if(Number(req.headers.get('Content-Length'))>1000000)return fail('Body too large',413);
  try{
   const body=await req.text();if(body.length>1000000)return fail('Body too large',413);const a=JSON.parse(body);
-  const token=req.headers.get('X-StokIQ-Worker-Identity')||req.headers.get('Authorization')?.replace(/^Bearer /,'')||a.worker_identity||'';
+  const token=a.worker_identity||req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
   if(!await haVerifyIdentity(token))return fail('Unauthorized GitHub workflow identity',401);
   delete a.worker_identity;
   return new Response(JSON.stringify(await haOperation(e,a)),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
