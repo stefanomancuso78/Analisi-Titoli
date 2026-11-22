@@ -96,12 +96,12 @@ export async function lrStatus(env,now=new Date().toISOString()){
  // matured, pre-registered subset, not merely the latest 1000 predictions.
  const [counts,evaluable]=await Promise.all([
   lrFirst(env,"SELECT COUNT(*) total,SUM(CASE WHEN json_extract(value,'$.probability') IS NOT NULL THEN 1 ELSE 0 END) trained FROM prod_settings WHERE key LIKE 'lr:prediction:%'"),
-  lrAll(env,"SELECT s.value,o.payload outcome,o.created_at outcome_at FROM prod_settings s JOIN parallel_outcomes o ON o.case_id=json_extract(s.value,'$.case_id') WHERE s.key LIKE 'lr:prediction:%' AND json_extract(s.value,'$.fold')='evaluation' AND json_extract(s.value,'$.probability') IS NOT NULL ORDER BY json_extract(s.value,'$.predicted_at') DESC LIMIT 20001")
+  lrAll(env,"SELECT s.key prediction_key,s.value,c.id actual_case_id,c.symbol actual_symbol,c.fold actual_fold,c.created_at actual_created_at,o.payload outcome,o.created_at outcome_at FROM prod_settings s JOIN parallel_cases c ON c.id=substr(s.key,length('lr:prediction:')+1) JOIN parallel_outcomes o ON o.case_id=c.id WHERE s.key LIKE 'lr:prediction:%' AND json_extract(s.value,'$.fold')='evaluation' AND json_extract(s.value,'$.probability') IS NOT NULL ORDER BY json_extract(s.value,'$.predicted_at') DESC LIMIT 20001")
  ]);
  const evaluationLimit=20000,limited=evaluable.length>evaluationLimit,results=[];
  for(const row of evaluable.slice(0,evaluationLimit)){
   const p=JSON.parse(row.value),at=row.outcome_at;
-  if(!at||!(Date.parse(p.case_created_at)<=Date.parse(p.predicted_at)&&Date.parse(p.predicted_at)<=Date.parse(p.case_created_at)+10*60000&&Date.parse(p.predicted_at)<Date.parse(at)))continue;
+  if(!at||p.case_id!==row.actual_case_id||p.symbol!==row.actual_symbol||p.fold!==row.actual_fold||p.fold!=='evaluation'||p.case_created_at!==row.actual_created_at||!(Date.parse(p.case_created_at)<=Date.parse(p.predicted_at)&&Date.parse(p.predicted_at)<=Date.parse(p.case_created_at)+10*60000&&Date.parse(p.predicted_at)<Date.parse(at)))continue;
   const y=JSON.parse(row.outcome).y;
   if((y===0||y===1)&&Number.isFinite(p.probability)&&p.probability>=0&&p.probability<=1)
    results.push({case_id:p.case_id,model_id:p.model_id,cohort:p.case_created_at.slice(0,10),symbol:p.symbol,brier:(p.probability-y)**2,reference_brier:Number.isFinite(p.reference_probability)?(p.reference_probability-y)**2:null});
