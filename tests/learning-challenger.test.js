@@ -251,3 +251,18 @@ test('shadow registration traverses more than 300 eligible cases without losing 
  assert.equal(e.db.prepare("SELECT COUNT(*) n FROM prod_settings WHERE key LIKE 'lr:prediction:%'").get().n,305);
  e.db.close();
 });
+
+
+test('shadow evaluation rejects stored forecasts whose case identity or fold differs from immutable case',async()=>{
+ const e=fixture();
+ const created='2026-11-17T10:00:00.000Z',predicted='2026-11-17T10:01:00.000Z',outcome='2026-12-17T10:00:00.000Z';
+ for(const [id,fold,symbol] of [['good','evaluation','VWS.CO'],['wrong-symbol','evaluation','SU.PA'],['wrong-fold','training','STM.PA'],['wrong-created','evaluation','ANET']]){
+  addCase(e.db,id,created,fold,symbol);
+  mature(e.db,id,outcome,1);
+  e.db.prepare('INSERT INTO prod_settings VALUES (?,?)').run('lr:prediction:'+id,JSON.stringify({case_id:id,symbol:id==='wrong-symbol'?'FAKE':symbol,fold:id==='wrong-fold'?'evaluation':fold,case_created_at:id==='wrong-created'?'2026-11-17T09:59:00.000Z':created,predicted_at:predicted,model_id:'test-model',probability:.8,reference_probability:.5}));
+ }
+ const status=await lrStatus(e,'2026-12-18T00:00:00.000Z');
+ assert.equal(status.matured_evaluations,1);
+ assert.equal(status.evaluation.unpaired_or_unscorable,3);
+ e.db.close();
+});
