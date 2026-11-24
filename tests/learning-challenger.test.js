@@ -266,3 +266,21 @@ test('shadow evaluation rejects stored forecasts whose case identity or fold dif
  assert.equal(status.evaluation.unpaired_or_unscorable,3);
  e.db.close();
 });
+
+
+test('incomplete shadow records count as overdue after the registration window',async()=>{
+ const e=fixture(),created='2026-11-24T10:01:00.000Z';
+ await lrActivate(e,'2026-11-24T10:00:00.000Z');
+ for(const id of ['missing-time','invalid-time','missing-id'])addCase(e.db,id,created,'evaluation','VWS.CO');
+ const insert=e.db.prepare('INSERT INTO prod_settings VALUES (?,?)');
+ insert.run('lr:prediction:missing-time',JSON.stringify({case_id:'missing-time',case_created_at:created}));
+ insert.run('lr:prediction:invalid-time',JSON.stringify({case_id:'invalid-time',case_created_at:created,predicted_at:'invalid'}));
+ insert.run('lr:prediction:missing-id',JSON.stringify({case_created_at:created,predicted_at:created}));
+ const before=await lrStatus(e,'2026-11-24T10:05:00.000Z');
+ assert.equal(before.registration.overdue_missing,0);
+ const after=await lrStatus(e,'2026-11-24T10:20:00.000Z');
+ assert.equal(after.registration.registered,0);
+ assert.equal(after.registration.overdue_missing,3);
+ assert.equal(after.registration.state,'missed_forecast_window');
+ e.db.close();
+});
