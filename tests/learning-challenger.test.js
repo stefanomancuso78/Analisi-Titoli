@@ -178,7 +178,7 @@ test('both operational routes activate shadow monitoring before generating new T
   assert.ok(first>0,'missing route '+route);
   const fragment=routes.slice(first,first+440);
   const activation=fragment.indexOf('await lrActivate(env)');
-  const create=fragment.indexOf('await t3Cycle(env)');
+  const create=fragment.indexOf('await lcParallelCycle(env)');
   const capture=fragment.indexOf('await lrCycle(env)');
   assert.ok(activation>=0&&create>activation&&capture>create,'shadow order regression in '+route);
  }

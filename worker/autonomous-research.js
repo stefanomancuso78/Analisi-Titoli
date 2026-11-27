@@ -1,3 +1,4 @@
+import {primaryCandidates,primaryPendingCount,primaryHash,primaryId,primarySave} from './primary-reader.js';
 // Independent bounded service worker. Frozen research validation/publishing remain unchanged.
 import {rfCycle,rfPacket,rfEvidenceHash,rfSave,rfPlan} from './research.js';
 const haNow=()=>new Date().toISOString(),haAll=async(e,s,...v)=>(await e.DB.prepare(s).bind(...v).all()).results||[],haFirst=(e,s,...v)=>e.DB.prepare(s).bind(...v).first();
@@ -21,7 +22,7 @@ export async function haStatus(e){
  if(!last||Date.now()-Date.parse(last.at)>40*60000)alerts.push('worker_heartbeat_missing');
  if(p.active&&!(h.n))alerts.push('reviews_stalled_last_hour');if(additions.n>closed&&p.active>=100)alerts.push('intake_exceeds_completions');if(provider?.next_attempt>haNow()&&(provider.worker_engine||'legacy')===(last?.worker_engine||'legacy')&&(provider.transport_failures||0)>=3&&haProviderOutage(provider.last_error))alerts.push('provider_backoff');
  const drafts=await haAll(e,"SELECT value FROM prod_settings WHERE key LIKE 'h24_dossier:%' AND json_extract(value,'$.state')!='reviewed' LIMIT 30");const recovery_drafts=drafts.map(r=>{const s=JSON.parse(r.value);let remaining=0;for(const d of s.documents||[]){let at=0;for(const n of (s.notes||[]).filter(n=>n.document_id===d.id).sort((a,b)=>a.offset-b.offset)){if(n.offset>at)break;at=Math.max(at,n.end)}remaining+=Math.max(0,d.text_length-at)}return {analysis_id:s.analysis_id,symbol:s.symbol,state:s.state,remaining_chars:remaining,final_fields:Object.keys(s.final_fields||{}).length,final_decisions:Object.keys(s.final_decisions||{}).length,recovery_version:s.recovery_version||0,next_attempt:s.next_attempt||null}});
- return {as_of:haNow(),counts,recovery_drafts,review_checkpoints:await haAll(e,"SELECT json_extract(value,'$.state') state,COUNT(*) dossiers,SUM(json_array_length(json_extract(value,'$.notes'))) chunks,SUM((SELECT COUNT(*) FROM json_each(json_extract(prod_settings.value,'$.final_fields')))) final_fields FROM prod_settings WHERE key LIKE 'h24_dossier:%' GROUP BY state"),policy:p,created_24h:additions.n,revisions_24h:reviews.n,revisions_hour:h.n,h24_closed_24h:closed,measured_closed_per_hour:rate,estimated_hours_to_below_100:stable&&rate?Math.max(0,(p.active-99)/rate):null,measurement_window_hours:elapsed,eta_basis:'Estimate withheld until at least one hour and three actual revisions; observed H24 closures only; excludes future provider availability and new intake',oldest_active_at:oldest.at,oldest_age_hours:oldest.at?(Date.now()-Date.parse(oldest.at))/3600000:null,heartbeat:last,admission:await haGet(e,'h24_admission_last'),market:await haGet(e,'h24_market_last'),provider,provider_errors:await haAll(e,"SELECT json_extract(payload,'$.last_source') provider,COUNT(*) jobs,SUM(attempts) attempts FROM research_jobs WHERE attempts>0 GROUP BY provider ORDER BY attempts DESC LIMIT 20"),alerts,runs:runs.map(r=>({...r,payload:JSON.parse(r.payload)}))};
+ const primary_pending=await primaryPendingCount(e);return {as_of:haNow(),pipeline_version:1,counts,primary_pending,recovery_drafts,review_checkpoints:await haAll(e,"SELECT json_extract(value,'$.state') state,COUNT(*) dossiers,SUM(json_array_length(json_extract(value,'$.notes'))) chunks,SUM((SELECT COUNT(*) FROM json_each(json_extract(prod_settings.value,'$.final_fields')))) final_fields FROM prod_settings WHERE key LIKE 'h24_dossier:%' GROUP BY state"),policy:p,created_24h:additions.n,revisions_24h:reviews.n,revisions_hour:h.n,h24_closed_24h:closed,measured_closed_per_hour:rate,estimated_hours_to_below_100:stable&&rate?Math.max(0,(p.active-99)/rate):null,measurement_window_hours:elapsed,eta_basis:'Estimate withheld until at least one hour and three actual revisions; observed H24 closures only; excludes future provider availability and new intake',oldest_active_at:oldest.at,oldest_age_hours:oldest.at?(Date.now()-Date.parse(oldest.at))/3600000:null,heartbeat:last,admission:await haGet(e,'h24_admission_last'),market:await haGet(e,'h24_market_last'),provider,provider_errors:await haAll(e,"SELECT json_extract(payload,'$.last_source') provider,COUNT(*) jobs,SUM(attempts) attempts FROM research_jobs WHERE attempts>0 GROUP BY provider ORDER BY attempts DESC LIMIT 20"),alerts,runs:runs.map(r=>({...r,payload:JSON.parse(r.payload)}))};
 }
 async function haAdmission(e){
  const last=await haGet(e,'h24_admission_last');if(last?.at&&Date.now()-Date.parse(last.at)<3600000)return {state:'not_due',last:last.at};
@@ -31,7 +32,7 @@ async function haAdmission(e){
  catch(error){const record={at:haNow(),state:'failed',error:String(error.message).slice(0,250)};await haPut(e,'h24_admission_last',record);await haEvent(e,'admission_error',record);return record;}
  finally{await e.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-admission' AND token=?").bind(token).run();}
 }
-async function haFence(e,a){const row=await haFirst(e,"SELECT * FROM prod_leases WHERE key='h24-review'");if(!row||row.token!==a.lease||row.expires_at<=Date.now())throw Error('Lease expired or superseded');const state=await haGet(e,haKey(a.analysis_id,a.evidence_hash,a.worker_engine));if(!state||state.lease!==a.lease)throw Error('Dossier lease mismatch');if(await rfEvidenceHash(e,a.analysis_id)!==a.evidence_hash)throw Error('Evidence changed; new complete review required');return state;}
+async function haFence(e,a){const row=await haFirst(e,"SELECT * FROM prod_leases WHERE key='h24-review'");if(!row||row.token!==a.lease||row.expires_at<=Date.now())throw Error('Lease expired or superseded');const state=await haGet(e,haKey(a.analysis_id,a.evidence_hash,a.worker_engine));if(!state||state.lease!==a.lease)throw Error('Dossier lease mismatch');if((a.analysis_id.startsWith('primary:')?await primaryHash(e,a.analysis_id):await rfEvidenceHash(e,a.analysis_id))!==a.evidence_hash)throw Error('Evidence changed; new complete review required');return state;}
 async function haNext(e,state){for(const d of state.documents){const done=state.notes.filter(n=>n.document_id===d.id).sort((a,b)=>a.offset-b.offset);let offset=0;for(const n of done){if(n.offset>offset)break;offset=Math.max(offset,n.end)}if(offset<d.text_length){const row=await haFirst(e,'SELECT payload FROM graph_documents WHERE id=?',d.id),text=JSON.parse(row.payload).text.slice(offset,offset+(state.chunk_chars||10000));return {document_id:d.id,title:d.title,offset,end:offset+text.length,text,text_hash:await haHash(text)};}}return null;}
 async function haHandoffNotes(e,legacy,packet){
  const reused=[],texts=new Map(),norm=t=>String(t).replace(/\s+/g,' ').trim();
@@ -50,6 +51,16 @@ async function haClaim(e,a){
  const lease=crypto.randomUUID();await e.DB.prepare("INSERT OR IGNORE INTO prod_leases VALUES ('h24-review','',0)").run();
  if(!await haFirst(e,"UPDATE prod_leases SET token=?,expires_at=? WHERE key='h24-review' AND expires_at<? RETURNING token",lease,Date.now()+20*60000,Date.now()))return {state:'busy'};
  try{
+  if(a.primary_reader===true&&(!a.target_analysis_id||a.target_analysis_id.startsWith('primary:'))&&a.worker_engine==='cpu-stream-v3'){
+   const primary=await primaryCandidates(e);
+   // Give the blocked first-reading lane a chance every other run; research keeps its own priority.
+   if(a.target_analysis_id?.startsWith('primary:')||primary.length>=6||Number(String(a.run_id||'0').split(':')[0])%2===0||!await haFirst(e,"SELECT e.job_id FROM research_evidence e JOIN research_jobs j ON j.id=e.job_id WHERE j.state!='reviewed' LIMIT 1")){for(const row of primary.filter(row=>!a.target_analysis_id||primaryId(row.id)===a.target_analysis_id)){
+    const id=primaryId(row.id),digest=await primaryHash(e,id),key=haKey(id,digest,a.worker_engine),old=await haGet(e,key);
+    if(old?.state==='blocked'||old?.next_attempt>haNow())continue;
+    const doc={issuer:row.issuer},state={...(old||{}),analysis_id:id,symbol:doc.issuer,evidence_hash:digest,job_kind:'primary',documents:[{id:row.id,title:row.title,text_length:row.text_length,content_hash:row.content_hash,published_at:row.published_at,acquired_at:row.acquired_at}],notes:old?.notes||[],worker_engine:a.worker_engine,chunk_chars:4000,attempts:old?.attempts||0,state:'reading',lease,claimed_at:haNow(),run_id:a.run_id||'unknown'};
+    await haPut(e,key,state);return {state:'claimed',worker_engine:a.worker_engine,job_kind:'primary',analysis_id:id,symbol:doc.issuer,evidence_hash:digest,lease,documents:state.documents,next:await haNext(e,state),notes:state.notes,final_fields:state.final_fields||{},final_decisions:state.final_decisions||{},review_context:{as_of:haNow(),source_published_at:row.published_at,original_event:row.title,questions:['Identify the verified issuer, actual incremental economic mechanism, materiality, expectations, timing, risks and invalidation; unknown is valid.']}};
+   }}
+  }
   const roots=await haAll(e,"SELECT a.id,a.symbol,COALESCE(NULLIF(d.published_at,''),a.created_at) event_at,MAX(j.priority) priority FROM semantic_analyses a LEFT JOIN graph_documents d ON d.id=a.document_id JOIN research_jobs j ON j.analysis_id=a.id WHERE j.state IN ('evidence_ready','pending','retry','waiting_source') AND EXISTS (SELECT 1 FROM research_evidence x JOIN research_jobs z ON z.id=x.job_id WHERE z.analysis_id=a.id) GROUP BY a.id ORDER BY event_at DESC,priority DESC,a.id DESC LIMIT 1000");
   const ordered=a.target_analysis_id?roots.filter(r=>r.id===a.target_analysis_id):roots;
   for(let i=0;i<ordered.length;i++){const root=ordered[i];
@@ -86,7 +97,7 @@ export async function haOperation(e,a){
   const quoteFields=['original_citation_id','additional_citation_id','attribution_citation_id'];
   let valid=enums[a.field]?.includes(a.value);
   if(quoteFields.includes(a.field)){
-   if(a.field==='attribution_citation_id'&&a.value===null)valid=true;
+   if((a.field==='attribution_citation_id'||state.job_kind==='primary'&&a.field==='additional_citation_id')&&a.value===null)valid=true;
    else if(typeof a.value==='string'&&/^\d+-\d+$/.test(a.value)){
     const [ni,qi]=a.value.split('-').map(Number),q=state.notes[ni]?.citations?.[qi];
     valid=Boolean(q)&&(a.field==='original_citation_id'?q.document_id===state.documents[0].id:a.field==='additional_citation_id'?q.document_id!==state.documents[0].id:true);
@@ -116,8 +127,8 @@ export async function haOperation(e,a){
   if(!state.notes.every(n=>n.model==='Qwen3-4B-Q4_K_M'||/^gemini:gemini-[a-z0-9.-]+$/.test(n.model)))throw Error('Unverified model receipt');
   const before=await haFirst(e,"SELECT COUNT(*) n FROM research_jobs WHERE analysis_id=? AND state='evidence_ready'",a.analysis_id);
   const reviewModel=typeof a.model==='string'&&/^gemini:gemini-[a-z0-9.-]+$/.test(a.model)?a.model:'Qwen3-4B-Q4_K_M';
-  const result=await rfSave(e,{...a.review,analysis_id:a.analysis_id,evidence_hash:a.evidence_hash,review_scope:'whole_acquired_text'},'h24:'+reviewModel+':github-actions');
-  state.state='reviewed';state.completed_at=haNow();state.revision_id=result.id;await haPut(e,key,state);await haPut(e,'h24_provider',{state:'ok',at:haNow()});await haEvent(e,'review',{at:haNow(),analysis_id:a.analysis_id,revision_id:result.id,qualified:result.qualified,closed:result.idempotent?0:before.n,run_id:state.run_id,model:reviewModel,gemini_used:state.notes.some(n=>n.model.startsWith('gemini:'))||[...Object.values(state.final_fields||{}),...Object.values(state.final_decisions||{})].some(n=>n.model.startsWith('gemini:')),chunks:state.notes.length});
+  const result=state.job_kind==='primary'?await primarySave(e,state,a.review,'h24:'+reviewModel+':github-actions'):await rfSave(e,{...a.review,analysis_id:a.analysis_id,evidence_hash:a.evidence_hash,review_scope:'whole_acquired_text'},'h24:'+reviewModel+':github-actions');
+  state.state='reviewed';state.completed_at=haNow();state.revision_id=result.id;await haPut(e,key,state);await haPut(e,'h24_provider',{state:'ok',at:haNow()});await haEvent(e,'review',{at:haNow(),analysis_id:a.analysis_id,revision_id:result.id,qualified:result.qualified,closed:state.job_kind==='primary'?0:result.idempotent?0:before.n,job_kind:state.job_kind||'followup',run_id:state.run_id,model:reviewModel,gemini_used:state.notes.some(n=>n.model.startsWith('gemini:'))||[...Object.values(state.final_fields||{}),...Object.values(state.final_decisions||{})].some(n=>n.model.startsWith('gemini:')),chunks:state.notes.length});
   await e.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-review' AND token=?").bind(a.lease).run();return result;
  }
  if(a.operation==='release'){
@@ -154,8 +165,9 @@ export async function haApi(req,e,hooks={}){
   const token=a.worker_identity||req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
   if(!await haVerifyIdentity(token))return fail('Unauthorized GitHub workflow identity',401);
   delete a.worker_identity;
+  if(a.operation==='maintenance'&&hooks.maintenance)return new Response(JSON.stringify(await hooks.maintenance(a.stage)),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
   if(a.operation==='inference'&&hooks.infer)return new Response(JSON.stringify(await hooks.infer(a)),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
-  const result=await haOperation(e,a);if(a.operation==='heartbeat'&&a.phase==='scheduler'&&hooks.market){try{result.market=await hooks.market()}catch(error){result.market={state:'failed',error:String(error.message).slice(0,180)};await haEvent(e,'market_error',result.market)}}
+  const result=await haOperation(e,a);if(a.operation==='review'&&hooks.advance){try{result.learning=await hooks.advance()}catch(error){result.learning={state:'failed',error:String(error.message).slice(0,180)};await haEvent(e,'learning_error',result.learning)}}if(a.operation==='heartbeat'&&a.phase==='scheduler'&&hooks.market){try{result.market=await hooks.market()}catch(error){result.market={state:'failed',error:String(error.message).slice(0,180)};await haEvent(e,'market_error',result.market)}}
   return new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
  }catch(error){return fail(String(error.message).slice(0,300),400)}
 }
