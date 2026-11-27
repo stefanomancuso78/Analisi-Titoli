@@ -53,6 +53,10 @@ test('runner synthesizes with bounded scalar responses, resumes saved fields and
 test('targeted recovery never claims a different dossier and exposes source coverage without texts',async()=>{const e=fixture();seed(e);assert.equal((await haOperation(e,{operation:'claim',target_analysis_id:'missing',worker_engine:'cpu-stream-v3'})).state,'no_reviewable_evidence');const c=await haOperation(e,{operation:'claim',target_analysis_id:'a',worker_engine:'cpu-stream-v3'});assert.equal(c.analysis_id,'a');assert.ok((await haStatus(e)).recovery_drafts[0].remaining_chars>0);await chunks(e,c);const draft=(await haStatus(e)).recovery_drafts[0];assert.equal(draft.remaining_chars,0);assert.equal(draft.final_fields,0);assert.ok(!JSON.stringify(draft).includes(fact));});
 
 
+test('status deduplicates legacy and cpu-stream recovery drafts for the same analysis',async()=>{
+ const e=fixture();seed(e,true);const legacy=await haOperation(e,{operation:'claim'});await haOperation(e,{...legacy,operation:'release'});const cpu=await haOperation(e,{operation:'claim',worker_engine:'cpu-stream-v3'});await haOperation(e,{...cpu,operation:'release'});const drafts=(await haStatus(e)).recovery_drafts.filter(d=>d.analysis_id===legacy.analysis_id);assert.equal(drafts.length,1);assert.equal(drafts[0].analysis_id,legacy.analysis_id);
+});
+
 test('decision checkpoints preserve false and null, reject invalid citations and remain fenced after resume',async()=>{
  const e=fixture();seed(e);let c=await haOperation(e,{operation:'claim',worker_engine:'cpu-stream-v3'});await assert.rejects(()=>haOperation(e,{...c,operation:'decision_field',field:'direction',value:'positive',model:'Qwen3-4B-Q4_K_M'}),/coverage/);
  let next=c.next;while(next){const saved=await haOperation(e,{...c,operation:'chunk',...next,note:{summary:'Complete source reviewed; no incremental economic benefit has been established.',citations:[{kind:'fact',quote:next.document_id==='doc1'?fact:more}]},model:'Qwen3-4B-Q4_K_M'});next=saved.next;}
