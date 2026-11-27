@@ -1,3 +1,6 @@
+import {lcParallelCycle} from './learning-coordinator.js';
+import {pipelineMaintenance} from './pipeline-maintenance.js';
+import {pipelineStatus} from './learning-pipeline.js';
 import {gmApi,gmInfer,gmStatus,gmModels,gmConfigure,GEMINI_PAGE} from './gemini.js';
 import {haApi,haStatus} from './autonomous-research.js';
 import {prView} from './performance-reconstruction.js';
@@ -147,6 +150,24 @@ const results=[];
  }finally{await env.DB.prepare("UPDATE prod_leases SET expires_at=0 WHERE key='h24-market' AND token=?").bind(lease).run();}
 }
 
+async function maintainPipeline(req,env,stage){
+ const ownerEnv={...env,REQUEST_ROLE:'owner'};
+ const handlers={
+  sources:()=>call('refresh_pattern_calibration',{source_refresh_cycle:true},req,ownerEnv),
+  prices:async()=>{
+   const rows=(await env.DB.prepare("SELECT symbol,MIN(COALESCE(q.last_date,'0000')) last_date FROM prod_entities p LEFT JOIN (SELECT symbol s,MAX(trade_date) last_date FROM market_closes GROUP BY symbol) q ON q.s=p.symbol WHERE EXISTS(SELECT 1 FROM semantic_analyses a WHERE a.symbol=p.symbol) GROUP BY symbol ORDER BY last_date,symbol LIMIT 3").all()).results||[];
+   const offsetRow=await env.DB.prepare("SELECT value FROM prod_settings WHERE key='pipeline:price_cursor'").first(),offset=Number(offsetRow?.value)||0;
+   const entities=(await env.DB.prepare("SELECT DISTINCT symbol FROM prod_entities WHERE EXISTS(SELECT 1 FROM semantic_analyses a WHERE a.symbol=prod_entities.symbol) ORDER BY symbol").all()).results||[],selected=entities.length?Array.from({length:Math.min(3,entities.length)},(_,i)=>entities[(offset+i)%entities.length].symbol):[];
+   const prices=selected.length?await call('refresh_market_comparisons',{symbols:selected},req,ownerEnv):{state:'empty'};
+   await env.DB.prepare("INSERT INTO prod_settings VALUES ('pipeline:price_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(offset+selected.length)).run();
+   return {state:prices.status==='partial'||prices.state==='failed'?'partial':'completed',selected,prices,oldest:rows};
+  },
+  learning:async()=>({state:'completed',parallel:await lcParallelCycle(env),test4:await t4Cycle(env),semantic:await smCycle(env)}),
+  capture:async()=>({state:'completed',performance:await pcCapture(env,await parallelStatus(env),await spStatus(env),new Date().toISOString(),await t4Status(env)),flow:await flCapture(env)})
+ };
+ return pipelineMaintenance(env,stage,handlers);
+}
+
 async function call(name,a,req,env){
  if(name==='list_predictions'){const all=await registry(env);return a.summary?{count:all.length,symbols:all.map(p=>p.symbol),experimental:all.filter(p=>p.experimental).length,states:all.reduce((v,p)=>(v[p.status]=(v[p.status]||0)+1,v),{})}:all;}
  if(name==='list_market_comparisons')return comparisons(env);
@@ -180,6 +201,7 @@ async function call(name,a,req,env){
  if(name==='list_research'&&a.test4_status)return t4Status(env);
  if(name==='list_research'&&a.market_readiness)return marketReadiness(env);
  if(name==='list_research'&&a.parallel_status)return parallelStatus(env);
+ if(name==='list_research'&&a.pipeline_status)return pipelineStatus(env);
  if(name==='list_research'&&a.learning_status)return lrStatus(env);
  if(name==='list_research'&&a.intelligence_status)return iqStatus(env,a.symbol||null);
  if(name==='list_research'&&a.intelligence_queue)return iqQueue(env);
@@ -245,9 +267,9 @@ async function call(name,a,req,env){
  if(name==='refresh_pattern_calibration'&&a.capital_history_import)return cpImport(env,a.capital_history_import);
  if(name==='refresh_pattern_calibration'&&a.capital_cycle)return cpCycle(env,fxFor);
  // Independent retry path for prospective shadow registration: never creates or changes Test 1-4 cases.
- if(name==='refresh_pattern_calibration'&&a.learning_cycle){const learning=await lrCycle(env);return {learning,registration:(await lrStatus(env)).registration};}if(name==='refresh_pattern_calibration'&&a.parallel_cycle){await t4Ensure(env);await lrActivate(env);const parallel=await t3Cycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);const performance=await (async()=>{const before=await parallelStatus(env);const entry_advancement=await pfAdvanceExisting(env,undefined,{'study-v1':before.tests[0].integrity,'semantic-study-v2':before.tests[1].integrity,parallel:before.tests[2].integrity});const capture=await pcCapture(env,entry_advancement.advanced?await parallelStatus(env):before,await spStatus(env),new Date().toISOString(),await t4Status(env));return {...capture,entry_advancement}})().catch(e=>({state:'failed',error:String(e.message).slice(0,180)}));return {...parallel,learning,test4,market,performance};}
+ if(name==='refresh_pattern_calibration'&&a.learning_cycle){const learning=await lrCycle(env);return {learning,registration:(await lrStatus(env)).registration};}if(name==='refresh_pattern_calibration'&&a.parallel_cycle){await t4Ensure(env);await lrActivate(env);const parallel=await lcParallelCycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);const performance=await (async()=>{const before=await parallelStatus(env);const entry_advancement=await pfAdvanceExisting(env,undefined,{'study-v1':before.tests[0].integrity,'semantic-study-v2':before.tests[1].integrity,parallel:before.tests[2].integrity});const capture=await pcCapture(env,entry_advancement.advanced?await parallelStatus(env):before,await spStatus(env),new Date().toISOString(),await t4Status(env));return {...capture,entry_advancement}})().catch(e=>({state:'failed',error:String(e.message).slice(0,180)}));return {...parallel,learning,test4,market,performance};}
  if(name==='refresh_pattern_calibration'&&a.test4_cycle){const test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);return {...test4,market};}
- if(name==='refresh_pattern_calibration'&&a.intelligence_cycle){await t4Ensure(env);await lrActivate(env);const intelligence=await iqCycle(env),parallel=await t3Cycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);const performance=await (async()=>{const before=await parallelStatus(env);const entry_advancement=await pfAdvanceExisting(env,undefined,{'study-v1':before.tests[0].integrity,'semantic-study-v2':before.tests[1].integrity,parallel:before.tests[2].integrity});const capture=await pcCapture(env,entry_advancement.advanced?await parallelStatus(env):before,await spStatus(env),new Date().toISOString(),await t4Status(env));return {...capture,entry_advancement}})().catch(e=>({state:'failed',error:String(e.message).slice(0,180)}));return {intelligence,parallel,learning,test4,market,performance};}
+ if(name==='refresh_pattern_calibration'&&a.intelligence_cycle){await t4Ensure(env);await lrActivate(env);const intelligence=await iqCycle(env),parallel=await lcParallelCycle(env),learning=await lrCycle(env).catch(e=>({state:'failed',error:String(e.message).slice(0,180)})),test4=await t4Cycle(env),market=await t4QuoteSweep(req,env);const performance=await (async()=>{const before=await parallelStatus(env);const entry_advancement=await pfAdvanceExisting(env,undefined,{'study-v1':before.tests[0].integrity,'semantic-study-v2':before.tests[1].integrity,parallel:before.tests[2].integrity});const capture=await pcCapture(env,entry_advancement.advanced?await parallelStatus(env):before,await spStatus(env),new Date().toISOString(),await t4Status(env));return {...capture,entry_advancement}})().catch(e=>({state:'failed',error:String(e.message).slice(0,180)}));return {intelligence,parallel,learning,test4,market,performance};}
  if(name==='refresh_pattern_calibration'&&a.intelligence_delta_review)return iqDeltaReview(env,a.intelligence_delta_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.thesis_review)return iqReview(env,a.thesis_review,simPrincipal(req)||'authenticated-admin');
  if(name==='refresh_pattern_calibration'&&a.method_case)return mtCase(env,a.method_case);
@@ -352,7 +374,7 @@ async function publishExperiment(snapshots,req,env,now){
  return {published_at:now,experiment:'M1D-v0 — regola meccanica non calibrata',published,skipped};
 }
 export default {async fetch(req,env){
- try{const url=new URL(req.url);if(url.pathname==='/api/worker')return haApi(req,env,{market:()=>t4QuoteSweep(req,{...env,REQUEST_ROLE:'owner'}),infer:a=>gmInfer(env,a)});env={...env,REQUEST_ROLE:await pdRole(req,env)};
+ try{const url=new URL(req.url);if(url.pathname==='/api/worker')return haApi(req,env,{market:()=>t4QuoteSweep(req,{...env,REQUEST_ROLE:'owner'}),infer:a=>gmInfer(env,a),advance:()=>lcParallelCycle(env),maintenance:stage=>maintainPipeline(req,env,stage)});env={...env,REQUEST_ROLE:await pdRole(req,env)};
  if(url.pathname==='/stokiq-wordmark-v1.png'&&req.method==='GET')return new Response(Uint8Array.from(atob(WORDMARK_BASE64),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/png','Cache-Control':'public,max-age=31536000,immutable'}});
  if(url.pathname==='/stokiq-logo-v2.png'&&req.method==='GET')return new Response(Uint8Array.from(atob(LOGO_BASE64),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/png','Cache-Control':'public,max-age=31536000,immutable'}});
  if(url.pathname==='/unlock'&&req.method==='POST'){

@@ -20,6 +20,25 @@ concurrency:
   group: ${{ inputs.recovery_analysis_id && 'stokiq-recovery-verification' || 'stokiq-autonomous-production' }}
   cancel-in-progress: false
 jobs:
+  maintenance:
+    if: github.repository == 'stefanomancuso78/Analisi-Titoli' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      STOKIQ_URL: https://stokiq.online
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refresh rotating issuer prices
+        run: node scripts/autonomous-runner.mjs --maintenance prices
+      - name: Advance eligible cases and immutable shadow registrations
+        if: always()
+        run: node scripts/autonomous-runner.mjs --maintenance learning
+      - name: Record current performance without historical backfill
+        if: always()
+        run: node scripts/autonomous-runner.mjs --maintenance capture
+      - name: Poll due sources within downstream backpressure
+        if: always()
+        run: node scripts/autonomous-runner.mjs --maintenance sources
   drain:
     if: github.repository == 'stefanomancuso78/Analisi-Titoli' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
