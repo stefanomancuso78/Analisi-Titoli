@@ -51,10 +51,10 @@ async function haClaim(e,a){
  const lease=crypto.randomUUID();await e.DB.prepare("INSERT OR IGNORE INTO prod_leases VALUES ('h24-review','',0)").run();
  if(!await haFirst(e,"UPDATE prod_leases SET token=?,expires_at=? WHERE key='h24-review' AND expires_at<? RETURNING token",lease,Date.now()+20*60000,Date.now()))return {state:'busy'};
  try{
-  if(a.primary_reader===true&&!a.target_analysis_id&&a.worker_engine==='cpu-stream-v3'){
+  if(a.primary_reader===true&&(!a.target_analysis_id||a.target_analysis_id.startsWith('primary:'))&&a.worker_engine==='cpu-stream-v3'){
    const primary=await primaryCandidates(e);
    // Give the blocked first-reading lane a chance every other run; research keeps its own priority.
-   if(primary.length>=6||Number(String(a.run_id||'0').split(':')[0])%2===0||!await haFirst(e,"SELECT e.job_id FROM research_evidence e JOIN research_jobs j ON j.id=e.job_id WHERE j.state!='reviewed' LIMIT 1")){for(const row of primary){
+   if(a.target_analysis_id?.startsWith('primary:')||primary.length>=6||Number(String(a.run_id||'0').split(':')[0])%2===0||!await haFirst(e,"SELECT e.job_id FROM research_evidence e JOIN research_jobs j ON j.id=e.job_id WHERE j.state!='reviewed' LIMIT 1")){for(const row of primary.filter(row=>!a.target_analysis_id||primaryId(row.id)===a.target_analysis_id)){
     const id=primaryId(row.id),digest=await primaryHash(e,id),key=haKey(id,digest,a.worker_engine),old=await haGet(e,key);
     if(old?.state==='blocked'||old?.next_attempt>haNow())continue;
     const doc={issuer:row.issuer},state={...(old||{}),analysis_id:id,symbol:doc.issuer,evidence_hash:digest,job_kind:'primary',documents:[{id:row.id,title:row.title,text_length:row.text_length,content_hash:row.content_hash,published_at:row.published_at,acquired_at:row.acquired_at}],notes:old?.notes||[],worker_engine:a.worker_engine,chunk_chars:4000,attempts:old?.attempts||0,state:'reading',lease,claimed_at:haNow(),run_id:a.run_id||'unknown'};

@@ -1,6 +1,6 @@
 import {lcParallelCycle} from './learning-coordinator.js';
 import {pipelineMaintenance} from './pipeline-maintenance.js';
-import {pipelineStatus} from './learning-pipeline.js';
+import {pipelineStatus,ensurePipelineBaseline} from './learning-pipeline.js';
 import {gmApi,gmInfer,gmStatus,gmModels,gmConfigure,GEMINI_PAGE} from './gemini.js';
 import {haApi,haStatus} from './autonomous-research.js';
 import {prView} from './performance-reconstruction.js';
@@ -151,6 +151,7 @@ const results=[];
 }
 
 async function maintainPipeline(req,env,stage){
+ await ensurePipelineBaseline(env);
  const ownerEnv={...env,REQUEST_ROLE:'owner'};
  const handlers={
   sources:()=>call('refresh_pattern_calibration',{source_refresh_cycle:true},req,ownerEnv),
@@ -169,6 +170,7 @@ async function maintainPipeline(req,env,stage){
 }
 
 async function call(name,a,req,env){
+ if(name==='refresh_pattern_calibration'&&a.pipeline_maintenance){if(env.REQUEST_ROLE!=='owner')throw Error('Manutenzione pipeline riservata al proprietario');return maintainPipeline(req,env,a.pipeline_maintenance);}
  if(name==='list_predictions'){const all=await registry(env);return a.summary?{count:all.length,symbols:all.map(p=>p.symbol),experimental:all.filter(p=>p.experimental).length,states:all.reduce((v,p)=>(v[p.status]=(v[p.status]||0)+1,v),{})}:all;}
  if(name==='list_market_comparisons')return comparisons(env);
  if(name==='list_monitoring_runs')return monitoringRuns(env);
