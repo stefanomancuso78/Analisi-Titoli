@@ -156,12 +156,11 @@ async function maintainPipeline(req,env,stage){
  const handlers={
   sources:()=>call('refresh_pattern_calibration',{source_refresh_cycle:true},req,ownerEnv),
   prices:async()=>{
-   const rows=(await env.DB.prepare("SELECT symbol,MIN(COALESCE(q.last_date,'0000')) last_date FROM prod_entities p LEFT JOIN (SELECT symbol s,MAX(trade_date) last_date FROM market_closes GROUP BY symbol) q ON q.s=p.symbol WHERE EXISTS(SELECT 1 FROM semantic_analyses a WHERE a.symbol=p.symbol) GROUP BY symbol ORDER BY last_date,symbol LIMIT 3").all()).results||[];
-   const offsetRow=await env.DB.prepare("SELECT value FROM prod_settings WHERE key='pipeline:price_cursor'").first(),offset=Number(offsetRow?.value)||0;
-   const entities=(await env.DB.prepare("SELECT DISTINCT symbol FROM prod_entities WHERE EXISTS(SELECT 1 FROM semantic_analyses a WHERE a.symbol=prod_entities.symbol) ORDER BY symbol").all()).results||[],selected=entities.length?Array.from({length:Math.min(3,entities.length)},(_,i)=>entities[(offset+i)%entities.length].symbol):[];
-   const prices=selected.length?await call('refresh_market_comparisons',{symbols:selected},req,ownerEnv):{state:'empty'};
-   await env.DB.prepare("INSERT INTO prod_settings VALUES ('pipeline:price_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(offset+selected.length)).run();
-   return {state:prices.status==='partial'||prices.state==='failed'?'partial':'completed',selected,prices,oldest:rows};
+   const offsetRow=await env.DB.prepare("SELECT value FROM prod_settings WHERE key='pipeline:price_cursor'").first(),offset=Math.max(0,Number(offsetRow?.value)||0);
+   // Use the market endpoint's own admitted registry; issuer recognition alone is not market admission.
+   const prices=await call('refresh_market_comparisons',{offset,limit:3},req,ownerEnv),selected=(prices.results||[]).map(r=>r.symbol),next=offset+selected.length;
+   await env.DB.prepare("INSERT INTO prod_settings VALUES ('pipeline:price_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(!selected.length||next>=prices.total?0:next)).run();
+   return {state:prices.status==='partial'?'partial':'completed',selected,prices};
   },
   learning:async()=>({state:'completed',parallel:await lcParallelCycle(env),test4:await t4Cycle(env),semantic:await smCycle(env)}),
   capture:async()=>({state:'completed',performance:await pcCapture(env,await parallelStatus(env),await spStatus(env),new Date().toISOString(),await t4Status(env)),flow:await flCapture(env)})
