@@ -36,15 +36,28 @@ jobs:
       - name: Record current performance without historical backfill
         if: always()
         run: node scripts/autonomous-runner.mjs --maintenance capture
+      - name: Acquire due research evidence alongside reading
+        if: always()
+        run: node scripts/autonomous-runner.mjs --acquire
       - name: Poll due sources within downstream backpressure
         if: always()
         run: node scripts/autonomous-runner.mjs --maintenance sources
   drain:
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        worker: ${{ fromJSON(vars.STOKIQ_H24_WORKERS == '4' && '[1,2,3,4]' || vars.STOKIQ_H24_WORKERS == '3' && '[1,2,3]' || '[1,2]') }}
+    outputs:
+      continue_recovery: ${{ steps.research.outputs.continue_recovery }}
     if: github.repository == 'stefanomancuso78/Analisi-Titoli' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       STOKIQ_URL: https://stokiq.online
+      H24_CPU_ONLY: '1'
+      H24_WORKER_ID: ${{ matrix.worker }}
+      H24_WORKER_CONCURRENCY: ${{ vars.STOKIQ_H24_WORKERS == '4' && '4' || vars.STOKIQ_H24_WORKERS == '3' && '3' || '2' }}
       PARENT_RUN: ${{ inputs.parent_run }}
       RECOVERY_ANALYSIS_ID: ${{ inputs.recovery_analysis_id }}
       MODEL_PATH: ${{ github.workspace }}/.h24-cache/Qwen3-4B-Q4_K_M.gguf
@@ -83,16 +96,22 @@ jobs:
           model_pid=$!
           trap 'kill "$model_pid" 2>/dev/null || true' EXIT
           node scripts/autonomous-runner.mjs
-      - name: Continue recovery only after measured useful progress
-        if: success() && steps.research.outputs.continue_recovery == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          args=(-f "parent_run=$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT")
-          if [ -n "$RECOVERY_ANALYSIS_ID" ]; then args+=(-f "recovery_analysis_id=$RECOVERY_ANALYSIS_ID"); fi
-          gh workflow run autonomous-research.yml --repo "$GITHUB_REPOSITORY" --ref main "${args[@]}"
       - name: Persist worker status, capacity and alarms
         if: always()
         env:
           H24_JOB_STATUS: ${{ job.status }}
         run: node scripts/autonomous-runner.mjs --finalize
+  continue:
+    needs: drain
+    if: needs.drain.result == 'success' && needs.drain.outputs.continue_recovery == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Schedule one continuation for the whole fleet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_ANALYSIS_ID: ${{ inputs.recovery_analysis_id }}
+        run: |
+          args=(-f "parent_run=$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT")
+          if [ -n "$RECOVERY_ANALYSIS_ID" ]; then args+=(-f "recovery_analysis_id=$RECOVERY_ANALYSIS_ID"); fi
+          gh workflow run autonomous-research.yml --repo "$GITHUB_REPOSITORY" --ref main "${args[@]}"
