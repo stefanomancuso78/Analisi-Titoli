@@ -1,0 +1,29 @@
+name: StokIQ Independent Acquisition H24
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: stokiq-acquisition-production
+  cancel-in-progress: false
+jobs:
+  acquire:
+    if: github.repository == 'stefanomancuso78/Analisi-Titoli' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Ensure local PDF text extraction
+        run: |
+          if ! command -v pdftotext >/dev/null || ! command -v pdfinfo >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends poppler-utils
+          fi
+      - name: Drain due acquisitions independently of CPU reading
+        run: node scripts/acquisition-runner.mjs

@@ -4,6 +4,12 @@ on:
     - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
     inputs:
+      workers:
+        description: Independent CPU workers (maximum four)
+        type: choice
+        options: ['4', '3', '2']
+        default: '4'
+        required: false
       recovery_analysis_id:
         description: Optional single existing dossier for bounded recovery verification
         required: false
@@ -12,6 +18,8 @@ on:
         description: Parent unattended recovery cycle
         required: false
         type: string
+env:
+  STOKIQ_H24_WORKERS: ${{ inputs.workers || '4' }}
 permissions:
   contents: read
   id-token: write
@@ -47,7 +55,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        worker: ${{ fromJSON(vars.STOKIQ_H24_WORKERS == '4' && '[1,2,3,4]' || vars.STOKIQ_H24_WORKERS == '3' && '[1,2,3]' || '[1,2]') }}
+        worker: ${{ fromJSON(inputs.workers != '2' && inputs.workers != '3' && '[1,2,3,4]' || inputs.workers == '3' && '[1,2,3]' || '[1,2]') }}
     outputs:
       continue_recovery: ${{ steps.research.outputs.continue_recovery }}
     if: github.repository == 'stefanomancuso78/Analisi-Titoli' && github.event_name != 'pull_request'
@@ -57,7 +65,6 @@ jobs:
       STOKIQ_URL: https://stokiq.online
       H24_CPU_ONLY: '1'
       H24_WORKER_ID: ${{ matrix.worker }}
-      H24_WORKER_CONCURRENCY: ${{ vars.STOKIQ_H24_WORKERS == '4' && '4' || vars.STOKIQ_H24_WORKERS == '3' && '3' || '2' }}
       PARENT_RUN: ${{ inputs.parent_run }}
       RECOVERY_ANALYSIS_ID: ${{ inputs.recovery_analysis_id }}
       MODEL_PATH: ${{ github.workspace }}/.h24-cache/Qwen3-4B-Q4_K_M.gguf
@@ -112,6 +119,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RECOVERY_ANALYSIS_ID: ${{ inputs.recovery_analysis_id }}
         run: |
-          args=(-f "parent_run=$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT")
+          args=(-f "parent_run=$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT" -f "workers=$STOKIQ_H24_WORKERS")
           if [ -n "$RECOVERY_ANALYSIS_ID" ]; then args+=(-f "recovery_analysis_id=$RECOVERY_ANALYSIS_ID"); fi
           gh workflow run autonomous-research.yml --repo "$GITHUB_REPOSITORY" --ref main "${args[@]}"
