@@ -90,7 +90,9 @@ export async function runWorker({base=process.env.STOKIQ_URL,token=process.env.S
      await heartbeat('classifying');
     }
     if(!Object.keys(properties).every(f=>Object.hasOwn(review,f)))break;
-    review.issuer_attribution_confirmed=Boolean(review.attribution_citation_id);
+    review.issuer_attribution_confirmed=Boolean(review.attribution_citation_id);const savedIssuer=decisions.issuer_attribution_confirmed;
+    if(savedIssuer&&savedIssuer.value!==review.issuer_attribution_confirmed)throw Error('Saved issuer decision contradicts exact attribution citation');
+    if(!savedIssuer){await request({...identity,operation:'decision_field',field:'issuer_attribution_confirmed',value:review.issuer_attribution_confirmed,model:activeModel});decisionFields++;}
     review.citations=selectedQuotes([{kind:'fact',citation_id:review.original_citation_id},...(review.additional_citation_id?[{kind:'fact',citation_id:review.additional_citation_id}]:[]),...(review.attribution_citation_id?[{kind:'attribution',citation_id:review.attribution_citation_id}]:[])],catalog);
     const result=await request({...identity,operation:'review',review,model:activeModel});completed=true;reviewed++;console.log(JSON.stringify({state:'validated_revision_saved',qualified:result.qualified,idempotent:result.idempotent}));
    }
