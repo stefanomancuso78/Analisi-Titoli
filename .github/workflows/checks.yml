@@ -17,6 +17,12 @@ jobs:
         run: |
           mkdir -p .openai
           if [ ! -f .openai/hosting.json ]; then cp .openai/hosting.example.json .openai/hosting.json; fi
+      - name: Ensure deterministic PDF extraction for regression tests
+        run: |
+          if ! command -v pdftotext >/dev/null || ! command -v pdfinfo >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends poppler-utils
+          fi
       - name: Tests
         run: npm test
       - name: Build

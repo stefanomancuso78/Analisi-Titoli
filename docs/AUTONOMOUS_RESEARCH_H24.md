@@ -40,10 +40,21 @@ All production Test 3 creation routes use the learning coordinator. It leaves th
 
 ### Parallelismo per dossier (28 novembre 2026)
 
-Il workflow avvia due job `drain` indipendenti, con modello CPU locale per ciascuno. La variabile GitHub `STOKIQ_H24_WORKERS` accetta 2 (default), 3 o 4; i heartbeat autenticati sincronizzano il limite server. Non occorrono nuovi segreti, servizi o API a pagamento. La matrice ha `fail-fast: false`; un solo job coordinatore decide la continuazione della flotta dopo progressi effettivi.
+Il workflow avvia quattro job `drain` indipendenti, con modello CPU locale per ciascuno. `STOKIQ_H24_WORKERS` è definita nella configurazione versionata del workflow, default 4; il parametro di avvio `workers` consente 2, 3 o 4. I heartbeat autenticati della versione 2 sincronizzano il limite server; vecchi heartbeat non possono ridurlo. Non è necessaria la scrittura di variabili amministrative GitHub. Non occorrono nuovi segreti, servizi o API a pagamento. La matrice ha `fail-fast: false`; un solo job coordinatore decide la continuazione della flotta dopo progressi effettivi.
 
 L'assegnazione di `h24-dossier:<analysis_id>` e il limite complessivo sono verificati atomicamente da un unico statement D1. L'esclusiva attraversa versioni di evidenze e motori: lo stesso dossier non può essere letto da due worker. Ogni scrittura di checkpoint/revisione è transazionalmente preceduta da verifica di token e scadenza; i token non compaiono nella telemetria. I lease scadono dopo 20 minuti e vengono rinnovati durante lo streaming. Un lease globale precedente viene rispettato finché scade o termina, senza azzerarlo.
 
 Le sintesi già avviate hanno precedenza anche tra letture primarie e follow-up. Il backoff dei processi CPU è separato per worker; rimangono invariati validazione, citazioni, checkpoint e vincoli qualitativi. La manutenzione acquisisce un piccolo lotto di evidenze dovute anche con lettori occupati, con lease dedicato, limite temporale e backoff delle fonti. Le altre politiche di acquisizione restano invariate.
 
 `autonomous_status.parallelism` espone capacità, dossier attivi e heartbeat per worker. Ogni claim registra nei log del job ID dossier e istantanea delle esclusive, mai i token. Il numero di chiusure giornaliere è una misura osservata: il target di 88 non è garantito dall'aumento dei worker e richiede almeno una finestra completa di osservazione.
+
+
+### Acquisizione indipendente H24
+
+`acquisition-h24.yml` ha un gruppo di concorrenza separato dai lettori e una pianificazione ogni cinque minuti (GitHub può ritardare gli avvii). Ogni job lavora per un massimo di sette minuti con budget e backoff, senza sessioni ChatGPT, modelli o API a pagamento. Le fonti dovute hanno un budget indipendente di uno/due poll all'ora; la sola coda di acquisizione, non quella di lettura, ne limita gli ingressi. `next_poll`, cooldown dei domini e `Retry-After` non sono aggirati.
+
+Il server scarica fino a tre HTML su domini distinti; fino a quattro ticket esterni gestiscono PDF o HTML grandi con un lease per dominio condiviso e assegnazione atomica. I ticket scadono dopo quattro minuti. Le ricevute firmate tramite identità GitHub comprendono URL, risposta HTTP, hash dei byte acquisiti, hash del testo e pagine PDF. `pdfinfo`/`pdftotext` estraggono tutte le pagine sul runner CPU. Non si usa OCR, non si tronca un documento dichiarandolo completo: file non leggibili o oltre i limiti restano da approfondire. Le scritture sono recintate dal token e dalla scadenza nella stessa transazione; ripetere una ricevuta già completata è idempotente.
+
+I fallimenti temporanei vengono recuperati conservando tentativi ed errori precedenti. Le alternative devono corrispondere alla stessa pubblicazione: mirror ufficiale GovInfo per Federal Register con numero e data identici, oppure fonte primaria già registrata con società, titolo e data identici. La lettura di un abstract non è presentata come brevetto integrale. PDF FDA, fonti non accessibili, metadati ambigui e documenti senza emittente verificato non generano automaticamente segnali.
+
+`acquisition_audit` espone baseline operativa, completamenti, nuovi testi, richieste processabili adesso, metadati ancora da riesaminare e ultimi esiti reali. I metadati valutati ma non attribuibili restano conservati, con motivazione e data del prossimo riesame. Non si azzera una coda cancellando documenti o segnando analisi come revisionate senza lettura.
